@@ -49,3 +49,17 @@ async def favs():
         print('card has model-star:', await pg.is_visible('#ltGrid [data-favm]'))
         print('ERRORS:', errs or 'none'); await br.close()
 asyncio.run(favs())
+# foundations
+async def found():
+    async with async_playwright() as p:
+        br = await p.chromium.launch(); pg = await br.new_page(); errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto(B+'/'); await pg.fill('#pw','pw'); await pg.click('#loginBtn'); await pg.wait_for_timeout(1500); await pg.click('#nav [data-t=found]'); await pg.wait_for_timeout(500)
+        await pg.fill('#fList .prompt[data-i="1"] .fText', 'BIG HEAD RULES: huge head, tiny body.'); await pg.click('#fSave'); await pg.wait_for_timeout(1000); print('foundations saved:', [(f['id'], len(f['text'])) for f in api('/api/state')['settings']['foundations']])
+        await pg.click('#nav [data-t=lab]'); await pg.wait_for_timeout(400); print('lab foundation pick default:', await pg.input_value('#ltFound'), '| theme is bighead via theme.txt ->', api('/api/state')['themes'][0]['settings'].get('proportions'))
+        await pg.click('#faceLib .face img'); await pg.click('#ltSlots .slot[data-v="1-male"]'); await pg.click('#ltNone'); await pg.check('#ltModels input[value="openai/gpt-image-1"]'); await pg.click('#ltRun'); await pg.wait_for_timeout(3000)
+        r = [x for x in api('/api/runs')['runs'] if x['kind']=='theme'][0]; print('run foundation:', r.get('foundation'), '| fullPrompt starts:', (r.get('fullPrompt') or '')[:30], '| prompt kept short:', r['prompt'][:20])
+        await pg.select_option('#ltFound', 'none'); await pg.click('#ltRun'); await pg.wait_for_timeout(3000); r = [x for x in api('/api/runs')['runs'] if x['kind']=='theme'][0]; print('override none ->', r.get('foundation'), (r.get('fullPrompt') or '')[:20])
+        import zipfile, io; z = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(urllib.request.Request(B+'/api/themes/export?bake=1', headers={'x-admin-token':'pw'})).read())); f = [n for n in z.namelist() if n.endswith('single-male.md')][0]; print('baked export starts:', z.read(f).decode()[:16], '| theme.txt:', z.read([n for n in z.namelist() if n.endswith('theme.txt')][0]).decode().strip().replace('\n', ' / '))
+        z2 = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(urllib.request.Request(B+'/api/themes/export?bake=0', headers={'x-admin-token':'pw'})).read())); print('plain export starts:', z2.read(f).decode()[:16])
+        print('ERRORS:', errs or 'none'); await br.close()
+asyncio.run(found())

@@ -7,7 +7,7 @@ http.createServer((req, res) => { let b = ''; req.on('data', c => b += c); req.o
   if (/^\/api\/v1\/images\/models\/.+\/endpoints/.test(req.url)) return json(200, { data: { endpoints: [{ pricing: { image: req.url.includes('gpt-image') ? '0.04' : req.url.includes('gemini') ? '0.03' : null } }] } });
   if (req.url.startsWith('/api/v1/images/models')) return json(200, { data: MODELS });
   if (req.url.startsWith('/api/v1/key')) return json(200, { data: { label: 'lab key', usage: 1.23, limit: null, limit_remaining: null } });
-  if (req.url === '/api/v1/images' && req.method === 'POST') { const body = JSON.parse(b); console.log('image', body.model, 'refs:', (body.input_references || []).length, 'q:', body.quality, 'r:', body.resolution, 'a:', body.aspect_ratio);
+  if (req.url === '/api/v1/images' && req.method === 'POST') { const body = JSON.parse(b); console.log('image', body.model, 'prompt:', JSON.stringify(body.prompt).slice(0, 60), 'refs:', (body.input_references || []).length, 'q:', body.quality, 'r:', body.resolution, 'a:', body.aspect_ratio);
     if (body.model === 'google/gemini-3.1-flash-image-preview' && body.quality) return json(400, { error: { message: 'Unsupported parameter: quality' } });
     if (/REFUSEME/.test(body.prompt)) return json(400, { error: { message: 'content moderation blocked this request' } });
     return setTimeout(() => json(200, { created: Date.now() / 1000 | 0, data: [{ b64_json: face.toString('base64') }], usage: { prompt_tokens: 0, completion_tokens: 100, total_tokens: 100, cost: 0.042 } }), 800); }

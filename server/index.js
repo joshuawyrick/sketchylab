@@ -80,10 +80,13 @@ function parseZipThemes(buf, targetName) {
 }
 
 // ---------- settings ----------
-const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], quality: '', resolution: '1K', aspect: '2:3', background: '', note: '' };
+const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', note: '' };
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
 const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); persist(SETTINGS_FILE); };
 
+/** the foundation text that goes in front of a prompt: pick = 'none' | foundation id | '' (use the theme's choice) */
+function foundationFor(theme, pick) { const s = getSettings(); const want = pick === 'none' ? null : pick || (theme && (theme.settings.foundation || (theme.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); if (!want) return null; const f = (s.foundations || []).find(x => x.id === want); return f && f.text.trim() ? f : null; }
+const withFoundation = (f, prompt) => f ? f.text.trim() + '\n\n' + prompt : prompt;
 // ---------- OpenRouter ----------
 let modelCache = { at: 0, list: [] };
 async function orModels(force) { // image-capable models; cached for 10 minutes. supported_parameters is an object keyed by parameter name
@@ -105,7 +108,7 @@ async function fillPrices(list) { const todo = list.filter(m => m.price == null 
 async function orImage(run) { // one model on one face — returns { png, cost, ms }
   if (!OR_KEY) throw new Error('OPENROUTER_API_KEY is not set in Secrets');
   const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings();
-  const body = { model: run.model, prompt: run.prompt, n: 1, output_format: 'png' };
+  const body = { model: run.model, prompt: run.fullPrompt || run.prompt, n: 1, output_format: 'png' };
   if (face) body.input_references = [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + face.toString('base64') } }];
   const o = run.opts || {}; if (o.quality || s.quality) body.quality = o.quality || s.quality; if (o.resolution || s.resolution) body.resolution = o.resolution || s.resolution; if (o.aspect || s.aspect) body.aspect_ratio = o.aspect || s.aspect; if (s.background) body.background = s.background;
   const t0 = Date.now(); const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 240000);
@@ -150,7 +153,7 @@ const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.que
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
 app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 app.get('/api/models', auth, async (req, res) => { try { res.json({ models: await orModels(req.query.refresh === '1'), hasKey: !!OR_KEY }); } catch (e) { res.status(502).json({ error: e.message, hasKey: !!OR_KEY }); } });
 app.get('/api/key', auth, async (req, res) => { // is the OpenRouter key good, and what's the balance
@@ -181,7 +184,8 @@ app.post('/api/themes/import', auth, upload.single('zip'), async (req, res) => {
 app.get('/api/themes/export', auth, async (req, res) => {
   const AdmZip = require('adm-zip'); const zip = new AdmZip(); const which = req.query.slug ? listThemes().filter(t => t.slug === req.query.slug) : listThemes();
   for (const t of which) { const dir = t.name.replace(/[\\/:*?"<>|]/g, '-');
-    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(t.prompts[v], 'utf8'));
+    const fd = req.query.bake === '1' ? foundationFor(t, '') : null; // bake=1: foundation text goes in front of every prompt file, so the booth draws exactly what the lab tested
+    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fd, t.prompts[v].trim()), 'utf8'));
     const lines = Object.entries(t.settings || {}).map(([k, v]) => `${k}: ${v}`); if (lines.length) zip.addFile(`${dir}/theme.txt`, Buffer.from(lines.join('\n') + '\n', 'utf8'));
     const th = path.join(THEMES, t.slug, 'thumb.png'); if (await ensureLocal(th)) zip.addFile(`${dir}/thumbnail.png`, fs.readFileSync(th)); }
   res.setHeader('content-type', 'application/zip'); res.setHeader('content-disposition', `attachment; filename="${which.length === 1 ? which[0].name.replace(/[^\w.-]+/g, '-') : 'sketchy-themes'}.zip"`); res.send(zip.toBuffer());
@@ -213,9 +217,9 @@ app.post('/api/runs/:id/apply', auth, (req, res) => { // make this run's prompt 
 app.post('/api/test/theme', auth, (req, res) => {
   const t = readTheme(slugify(req.body.theme || '')); if (!t) return res.status(400).json({ error: 'pick a theme' });
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
-  const faces = req.body.faces || {}; const batch = 'b' + Date.now().toString(36); const out = [];
+  const faces = req.body.faces || {}; const batch = 'b' + Date.now().toString(36); const out = []; const fd = foundationFor(t, req.body.foundation);
   for (const v of VARIANTS) { const prompt = (t.prompts[v] || '').trim(); const face = faces[v]; if (!prompt || !face) continue;
-    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
+    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'nothing to run — give at least one combination a face (and make sure it has a prompt)' });
   res.json({ ok: true, batch, runs: out });
 });
@@ -224,7 +228,8 @@ app.post('/api/test/prompt', auth, (req, res) => {
   const prompt = String(req.body.prompt || '').trim(); if (!prompt) return res.status(400).json({ error: 'write a prompt' });
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const batch = 'b' + Date.now().toString(36); const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const out = [];
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
+  const fd = foundationFor(t, req.body.foundation);
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
   res.json({ ok: true, batch, runs: out });
 });
 app.get('/api/costs.csv', auth, (req, res) => { const rows = [...runs.values()].filter(r => r.status === 'done').sort((a, b) => a.createdAt - b.createdAt).map(r => [new Date(r.createdAt).toISOString(), r.kind, r.themeName || '', VARIANT_LABELS[r.variant] || '', r.model, r.seconds || '', r.cost != null ? r.cost.toFixed(4) : '']); const esc = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
