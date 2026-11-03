@@ -235,6 +235,16 @@ app.get('/api/key', auth, async (req, res) => { // are the OpenRouter / OpenAI k
   res.json(out);
 });
 
+// vision-capable chat models on the OpenAI account — the choices for the likeness judge
+const JUDGE_FALLBACK = ['gpt-5.4-mini', 'gpt-5.5', 'gpt-6-astra'];
+app.get('/api/judge-models', auth, async (req, res) => {
+  if (!OAI_KEY) return res.json({ models: JUDGE_FALLBACK, source: 'built-in list (no OPENAI_API_KEY)' });
+  try { const r = await fetch(OAI_BASE + '/models', { headers: { Authorization: 'Bearer ' + OAI_KEY } }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenAI ${r.status}`);
+    const ids = (Array.isArray(d.data) ? d.data.map(m => m.id) : []).filter(id => /^(gpt-[4-9]|o[1-9]|chatgpt-[4-9])/.test(id) && !/image|realtime|audio|tts|transcri|embed|search|instruct|moderation|codex|deep-research|computer|preview-\d|\d{4}-\d{2}-\d{2}$/.test(id)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    res.json({ models: ids.length ? ids : JUDGE_FALLBACK, source: ids.length ? 'your OpenAI account' : 'built-in list' }); }
+  catch (e) { res.json({ models: JUDGE_FALLBACK, source: 'built-in list (' + e.message + ')' }); }
+});
+
 // themes
 app.post('/api/themes/import', auth, upload.single('zip'), async (req, res) => {
   try {
