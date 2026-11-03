@@ -80,7 +80,7 @@ function parseZipThemes(buf, targetName) {
 }
 
 // ---------- settings ----------
-const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], quality: '', resolution: '1K', aspect: '2:3', background: '', note: '' };
+const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], quality: '', resolution: '1K', aspect: '2:3', background: '', note: '' };
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
 const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); persist(SETTINGS_FILE); };
 
@@ -150,7 +150,8 @@ const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.que
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
 app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 app.get('/api/models', auth, async (req, res) => { try { res.json({ models: await orModels(req.query.refresh === '1'), hasKey: !!OR_KEY }); } catch (e) { res.status(502).json({ error: e.message, hasKey: !!OR_KEY }); } });
 app.get('/api/key', auth, async (req, res) => { // is the OpenRouter key good, and what's the balance
   if (!OR_KEY) return res.json({ configured: false });

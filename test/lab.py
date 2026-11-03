@@ -39,3 +39,13 @@ async def main():
         exp = urllib.request.urlopen(urllib.request.Request(B+'/api/themes/export', headers={'x-admin-token':'pw'})).read(); print('export zip bytes:', len(exp))
         print('ERRORS:', errs or 'none'); await br.close()
 asyncio.run(main())
+# favorites
+async def favs():
+    async with async_playwright() as p:
+        br = await p.chromium.launch(); pg = await br.new_page(); errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto(B+'/'); await pg.fill('#pw','pw'); await pg.click('#loginBtn'); await pg.wait_for_timeout(1500); await pg.click('#nav [data-t=settings]'); await pg.wait_for_timeout(1200)
+        await pg.click('#sModels [data-fav="black-forest-labs/flux.2-pro"]'); await pg.wait_for_timeout(600); print('favorites:', api('/api/state')['settings']['favorites'], '| count text:', await pg.text_content('#modelCount'))
+        await pg.click('#nav [data-t=lab]'); await pg.click('#ltFav'); await pg.wait_for_timeout(200); print('fav-only ticked:', [await i.get_attribute('value') for i in await pg.query_selector_all('#ltModels input:checked')], '| first listed:', await pg.get_attribute('#ltModels input', 'value'))
+        print('card has model-star:', await pg.is_visible('#ltGrid [data-favm]'))
+        print('ERRORS:', errs or 'none'); await br.close()
+asyncio.run(favs())
