@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" href="/favicon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketchy Lab</title>
+<style>
+  :root{--blue:#006df6;--ink:#0a0a0a;--mut:#5b6474;--bg:#eef1f5;--card:#fff;--line:#dde2ea;--bad:#d7263d;--ok:#13a05a;--gold:#e0a800}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  header .logo{height:28px}header .t{font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut);border-left:1px solid var(--line);padding-left:12px}
+  nav{margin-left:auto;display:flex;gap:4px;align-items:center}nav button{background:none;border:1px solid transparent;padding:7px 12px;border-radius:8px;font:600 13px system-ui;cursor:pointer;color:var(--mut)}nav button.on{background:#eaf2ff;color:var(--blue)}
+  main{max-width:1200px;margin:0 auto;padding:18px}
+  .tab{display:none}.tab.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  h2{font-size:15px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{background:#fff;border:1px solid #c9d1dd;border-radius:7px;padding:7px 12px;font:500 13px system-ui;cursor:pointer}button:hover{border-color:var(--blue)}button:disabled{opacity:.5;cursor:default}
+  button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}button.danger{background:var(--bad);color:#fff;border-color:var(--bad)}button.sm{padding:3px 8px;font-size:12px}
+  input[type=text],input[type=number],input[type=password],select,textarea{width:100%;border:1px solid #c9d1dd;border-radius:7px;padding:8px;font:13px system-ui;background:#fff}
+  textarea{min-height:120px;font:13px/1.45 ui-monospace,Menlo,monospace;resize:vertical}
+  .row{display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap}.row label{min-width:150px;color:var(--mut)}
+  .note{color:var(--mut);font-size:12.5px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+  .login{max-width:360px;margin:80px auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+  .theme{border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;background:#fff;text-align:center}.theme img,.theme .ph{width:100%;aspect-ratio:1;object-fit:contain;background:#fff;display:block}.theme .ph{display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px}.theme .n{padding:8px;font-weight:600}.theme.on{outline:3px solid var(--blue)}
+  .prompt{margin:12px 0}.prompt h3{margin:0 0 4px;font-size:13px}.prompt .cnt{float:right;color:var(--mut);font-weight:400}
+  .faces{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.face{position:relative}.face img{height:64px;width:64px;object-fit:cover;border-radius:8px;border:3px solid transparent;cursor:pointer;display:block;background:#fff}.face.on img{border-color:var(--blue)}.face .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--bad);color:#fff;border:0;font:700 11px system-ui;padding:0;line-height:20px;cursor:pointer;display:none}.face:hover .x{display:block}
+  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.slot{border:2px dashed var(--line);border-radius:10px;padding:6px;text-align:center;font-size:12px;cursor:pointer;background:#fff;position:relative}.slot img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;display:block;margin-bottom:4px}.slot.has{border-style:solid;border-color:var(--blue)}.slot .x{position:absolute;top:4px;right:4px;background:var(--bad);color:#fff;border:0;border-radius:50%;width:20px;height:20px;font:700 11px system-ui;padding:0;cursor:pointer}
+  .models{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 14px;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px}.models label{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.models .p{color:var(--mut);font-size:11px;margin-left:auto}
+  .gallery{max-height:72vh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fafbfd}
+  .bRow{display:grid;grid-template-columns:150px 1fr;gap:8px;align-items:start;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}.bRow h4{margin:0;font-size:13px}
+  .labGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .lab{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden;display:flex;flex-direction:column;position:relative}.lab img{width:100%;aspect-ratio:2/3;object-fit:contain;background:#fff;display:block}.lab .b{padding:8px 10px;font-size:12.5px;display:flex;flex-direction:column;gap:5px}.lab .m{font-weight:700;word-break:break-all}.lab .p{color:var(--mut);max-height:3.9em;overflow:hidden;white-space:pre-wrap;font-size:11.5px}
+  .lab.star{outline:3px solid var(--gold)}.lab .tag{position:absolute;top:8px;left:8px;background:var(--gold);color:#111;font:800 11px system-ui;padding:3px 8px;border-radius:999px}
+  .lab .wait{aspect-ratio:2/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:12px;background:#f7f9fd}.spin{width:22px;height:22px;border:3px solid #dde2ea;border-top-color:var(--blue);border-radius:50%;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
+  .lab .fail{padding:14px;color:#b51f33;font-size:12px;aspect-ratio:2/3;overflow:auto}
+  .lab .acts{display:flex;gap:5px;flex-wrap:wrap}.lab .acts button{padding:3px 7px;font-size:11.5px}
+  table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase}
+  #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#0a0a0a;color:#fff;padding:12px 20px;border-radius:10px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}#toast.ok{background:var(--ok)}#toast.bad{background:var(--bad)}
+</style>
+</head>
+<body>
+<header><svg class="logo" viewBox="60 150 1870 400"></svg><span class="t">Lab</span>
+  <nav id="nav"><button data-t="lab" class="on">Image lab</button><button data-t="studio">Generator studio</button><button data-t="themes">Themes</button><button data-t="settings">Models &amp; settings</button><span class="note" id="keyBar"></span></nav></header>
+<main>
+  <div class="login card" id="login"><h2>Password</h2><input type="password" id="pw" placeholder="password"><div class="row" style="margin-top:10px"><button class="primary" id="loginBtn">Sign in</button><span id="loginErr" class="bad"></span></div></div>
+
+  <section class="tab on" id="tab-lab">
+    <div class="card"><h2>Image lab <span class="note">a theme's saved prompts × your faces × every model you tick</span></h2>
+      <div class="row"><label>Theme</label><select id="ltTheme" style="max-width:320px"></select><span class="note" id="ltInfo"></span></div>
+      <div class="row" style="align-items:flex-start"><label>Faces</label><div style="flex:1"><div class="faces" id="faceLib"></div><div class="note" style="margin-top:6px"><button class="sm" id="faceAdd">+ Add a face</button><input type="file" id="faceIn" accept="image/*" multiple style="display:none"> click a face, then click the combinations it should test. Hover a face for ✕ to remove it from the library.</div></div></div>
+      <div id="ltSlots" class="slots"></div>
+      <div class="row" style="align-items:flex-start;margin-top:8px"><label>Models</label><div style="flex:1"><div id="ltModels" class="models"></div><div class="note" style="margin-top:4px"><button class="sm" id="ltAll">All ticked in Settings</button> <button class="sm" id="ltNone">None</button> · price shown is OpenRouter's listed per-image rate where it gives one; the real cost of each run is recorded on its card</div></div></div>
+      <div class="row"><label>Options</label>
+        <select id="ltQuality" style="width:auto"><option value="">quality: default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
+        <select id="ltRes" style="width:auto"><option value="">resolution: default</option><option value="512">512</option><option value="768">768</option><option value="1K">1K</option><option value="1.5K">1.5K</option><option value="2K">2K</option><option value="4K">4K</option></select>
+        <select id="ltAspect" style="width:auto"><option value="">aspect: default</option><option value="2:3">2:3 (portrait, booth)</option><option value="3:4">3:4</option><option value="1:1">1:1</option><option value="9:16">9:16</option><option value="4:3">4:3</option></select>
+        <button class="primary" id="ltRun">Run this theme</button><span id="ltMsg" class="note"></span></div>
+      <div class="row" style="margin:14px 0 6px"><h3 id="galTitle" style="margin:0;font-size:16px">Generated images</h3><span class="note" id="galCount"></span><label class="note" style="display:flex;gap:6px;align-items:center;margin-left:auto"><input type="checkbox" id="galOnlyLast"> only the latest run</label><button class="danger sm" id="galClear">Clear this theme's images</button><span class="note">keeps ★ starred</span></div>
+      <div id="ltGrid" class="gallery"></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-studio">
+    <div class="card"><h2>Generator studio <span class="note">one prompt, one face, any models — a scratchpad for writing prompts</span></h2>
+      <div class="row"><label>File it under</label><select id="stTheme" style="max-width:260px"><option value="">(no theme)</option></select><select id="stVar" style="max-width:260px"><option value="">(no combination)</option></select><span class="note">optional — lets "Use this prompt" save it straight into a theme</span></div>
+      <div class="row" style="align-items:flex-start"><label>Face</label><div style="flex:1"><div class="faces" id="stFaces"></div><div class="note" style="margin-top:4px">click one (or none for a text-only test)</div></div></div>
+      <div class="row" style="align-items:flex-start"><label>Prompt</label><div style="flex:1"><textarea id="stPrompt" placeholder="Describe the line-art sketch you want…"></textarea><div class="note"><span id="stCnt">0</span> characters · <button class="sm" id="stLoad">Load the theme's saved prompt for this combination</button></div></div></div>
+      <div class="row" style="align-items:flex-start"><label>Models</label><div style="flex:1"><div id="stModels" class="models"></div></div></div>
+      <div class="row"><label></label><button class="primary" id="stRun">Generate</button><span id="stMsg" class="note"></span><button class="danger sm" id="stClear" style="margin-left:auto">Clear studio results</button></div>
+      <div id="stGrid" class="labGrid"></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-themes">
+    <div class="card"><h2>Themes <span class="note">same zip format as the booth: one folder per theme, one .md per combination, optional thumbnail.png and theme.txt</span>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><button id="impBtn">Import zip…</button><input type="file" id="impIn" accept=".zip" style="display:none"><label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="impReplace"> replace all prompts in matching themes</label><a id="expAll" href="#"><button>Export all</button></a><button id="newTheme">+ New theme</button></span></h2>
+      <div class="grid" id="themeGrid"></div>
+    </div>
+    <div class="card" id="themeEd" style="display:none"><h2 id="teName"></h2>
+      <div class="row"><label>Name</label><input type="text" id="teNameIn" style="max-width:320px"><a id="teExport" href="#"><button>Export this theme</button></a><button id="teThumbBtn">Thumbnail…</button><input type="file" id="teThumbIn" accept="image/*" style="display:none"><button id="teReplace">Replace prompts from zip…</button><input type="file" id="teZipIn" accept=".zip" style="display:none"><button class="danger" id="teDelete" style="margin-left:auto">Delete theme</button></div>
+      <div id="tePrompts"></div>
+      <div class="row"><button class="primary" id="teSave">Save prompts</button><span class="note" id="teMsg"></span></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-settings">
+    <div class="card"><h2>OpenRouter</h2>
+      <div class="row"><label>Key</label><span id="keyState" class="note">checking…</span><button class="sm" id="keyCheck">Re-check</button></div>
+      <div class="row"><label></label><span class="note">Add the Secret <code>OPENROUTER_API_KEY</code> in Replit (openrouter.ai → Keys). Runs are billed to your OpenRouter credit. <code>ADMIN_PASSWORD</code> sets this page's password (default "sketchy").</span></div>
+      <div class="row"><label>Storage</label><span id="durState"></span></div>
+    </div>
+    <div class="card"><h2>Models <span class="note">tick the ones the lab offers by default · <button class="sm" id="modelsRefresh">Refresh list from OpenRouter</button></span></h2>
+      <div class="row"><input type="text" id="modelFilter" placeholder="filter: flux, gemini, openai, seedream…" style="max-width:320px"><label class="note" style="display:flex;gap:4px;align-items:center;min-width:0"><input type="checkbox" id="modelEditsOnly" checked> only models that take a reference photo</label><span class="note" id="modelCount"></span></div>
+      <div id="sModels" class="models" style="max-height:420px"></div>
+    </div>
+    <div class="card"><h2>Defaults for every run</h2>
+      <div class="row"><label>Quality</label><select id="sQuality" style="width:auto"><option value="">model default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select><span class="note">ignored by models without a quality setting</span></div>
+      <div class="row"><label>Resolution</label><select id="sRes" style="width:auto"><option value="">model default</option><option value="512">512</option><option value="768">768</option><option value="1K">1K</option><option value="1.5K">1.5K</option><option value="2K">2K</option><option value="4K">4K</option></select></div>
+      <div class="row"><label>Aspect</label><select id="sAspect" style="width:auto"><option value="">model default</option><option value="2:3">2:3 (portrait — what the booth uses)</option><option value="3:4">3:4</option><option value="1:1">1:1</option><option value="9:16">9:16</option></select></div>
+      <div class="row"><label>Parallel runs</label><span class="note" id="parNote"></span></div>
+      <div class="row"><button class="primary" id="sSave">Save</button><span id="sMsg" class="ok"></span><a id="costCsv" href="#" style="margin-left:auto"><button>Download cost log (CSV)</button></a></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let TOKEN = sessionStorage.getItem('lab.token') || ''; let STATE = null; let MODELS = []; let RUNS = []; let editing = null; let poll = null;
+  const LT = { picked: null, slots: {} }; const ST = { face: null };
+  fetch('logo.svg').then(r => r.text()).then(t => { const m = t.match(/<svg[^>]*>([\s\S]*)<\/svg>/); if (m) document.querySelector('header .logo').innerHTML = m[1]; }).catch(() => {});
+  const api = async (url, opts = {}) => { opts.headers = Object.assign({ 'x-admin-token': TOKEN }, opts.headers || {}); if (opts.json) { opts.body = JSON.stringify(opts.json); opts.headers['Content-Type'] = 'application/json'; } const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (r.status === 401) { showLogin(); throw new Error('sign in'); } if (!r.ok) throw new Error(d.error || r.status); return d; };
+  const toast = (m, k = 'ok') => { const t = $('toast'); t.textContent = m; t.className = 'on ' + k; clearTimeout(toast.t); toast.t = setTimeout(() => t.className = '', 3200); };
+  const fmt = ts => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const money = c => c == null ? '' : '$' + (+c).toFixed(c < 0.1 ? 4 : 3);
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  function showLogin() { $('login').style.display = ''; document.querySelectorAll('.tab').forEach(t => t.classList.remove('on')); }
+  $('loginBtn').onclick = async () => { try { const r = await api('/api/login', { method: 'POST', json: { password: $('pw').value } }); TOKEN = r.token; sessionStorage.setItem('lab.token', TOKEN); $('login').style.display = 'none'; tab('lab'); refresh(); } catch (e) { $('loginErr').textContent = 'Wrong password'; } };
+  $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+  document.querySelectorAll('#nav button[data-t]').forEach(b => b.onclick = () => tab(b.dataset.t));
+  function tab(t) { document.querySelectorAll('#nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t)); document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === 'tab-' + t)); }
+
+  async function refresh() {
+    try { STATE = await api('/api/state'); } catch (e) { return; }
+    $('login').style.display = 'none';
+    $('keyBar').textContent = STATE.hasKey ? '' : '⚠ no OpenRouter key'; $('durState').innerHTML = STATE.readOnly ? '<span class="bad">dev workspace — not written to the bucket</span>' : STATE.durable ? '<span class="ok">✓ Replit bucket — survives redeploys</span>' : '<span class="bad">local disk only</span>'; $('parNote').textContent = `${STATE.parallel} at a time (Secret LAB_PARALLEL to change)`;
+    fillThemeSelects(); renderThemes(); renderFaces(); renderSettings(); ltTheme(); if (!refresh.models) { refresh.models = true; loadModels(false); keyStatus(); } await loadRuns();
+    $('expAll').href = '/api/themes/export?token=' + encodeURIComponent(TOKEN); $('costCsv').href = '/api/costs.csv?token=' + encodeURIComponent(TOKEN);
+  }
+  function fillThemeSelects() { const opts = STATE.themes.map(t => `<option value="${t.slug}">${esc(t.name)}</option>`).join('');
+    for (const [id, blank] of [['ltTheme', ''], ['stTheme', '<option value="">(no theme)</option>']]) { const sel = $(id); const want = sel.value || localStorage.getItem('lab.' + id) || ''; if (sel.innerHTML !== blank + opts) sel.innerHTML = blank + opts; if (want && (STATE.themes.some(t => t.slug === want) || !want)) sel.value = want; }
+    $('stVar').innerHTML = '<option value="">(no combination)</option>' + STATE.variantOrder.map(v => `<option value="${v}">${STATE.variants[v]}</option>`).join(''); }
+  $('ltTheme').onchange = () => { localStorage.setItem('lab.ltTheme', $('ltTheme').value); ltTheme(); };
+  $('stTheme').onchange = () => localStorage.setItem('lab.stTheme', $('stTheme').value);
+
+  // ----- faces -----
+  function faceHtml(id, on, del) { return `<div class="face ${on ? 'on' : ''}" data-id="${id}"><img src="/api/faces/${id}?token=${encodeURIComponent(TOKEN)}">${del ? '<button class="x" title="remove from library">✕</button>' : ''}</div>`; }
+  function renderFaces() { const fs = STATE.faces;
+    $('faceLib').innerHTML = fs.map(f => faceHtml(f.id, LT.picked === f.id, true)).join('') || '<span class="note">no faces yet</span>';
+    $('faceLib').querySelectorAll('.face').forEach(d => { d.querySelector('img').onclick = () => { LT.picked = LT.picked === d.dataset.id ? null : d.dataset.id; renderFaces(); }; d.querySelector('.x').onclick = async e => { e.stopPropagation(); if (!confirm('Remove this face from the library? Results that used it are kept.')) return; await api('/api/faces/' + d.dataset.id, { method: 'DELETE' }); for (const v of Object.keys(LT.slots)) if (LT.slots[v] === d.dataset.id) delete LT.slots[v]; saveSlots(); if (LT.picked === d.dataset.id) LT.picked = null; await refresh(); }; });
+    $('stFaces').innerHTML = fs.map(f => faceHtml(f.id, ST.face === f.id, false)).join('') || '<span class="note">add faces in the Image lab</span>';
+    $('stFaces').querySelectorAll('.face').forEach(d => d.querySelector('img').onclick = () => { ST.face = ST.face === d.dataset.id ? null : d.dataset.id; renderFaces(); }); }
+  $('faceAdd').onclick = () => $('faceIn').click();
+  $('faceIn').onchange = async () => { const files = Array.from($('faceIn').files); $('faceIn').value = ''; let last = null; for (const f of files) { const fd = new FormData(); fd.append('photo', f); try { const r = await api('/api/faces', { method: 'POST', body: fd }); last = r.id; } catch (e) { toast('Upload failed: ' + e.message, 'bad'); } } if (last) { LT.picked = last; toast(files.length > 1 ? `${files.length} faces added` : 'Face added — now click the combinations it should test'); } await refresh(); };
+
+  // ----- image lab -----
+  const slotKey = () => 'lab.slots.' + $('ltTheme').value; const saveSlots = () => localStorage.setItem(slotKey(), JSON.stringify(LT.slots));
+  function ltTheme() { try { LT.slots = JSON.parse(localStorage.getItem(slotKey()) || '{}'); } catch (_) { LT.slots = {}; } for (const v of Object.keys(LT.slots)) if (!STATE.faces.some(f => f.id === LT.slots[v])) delete LT.slots[v]; const t = STATE.themes.find(x => x.slug === $('ltTheme').value); $('ltInfo').textContent = t ? `${STATE.variantOrder.filter(v => t.prompts[v].trim()).length} of ${STATE.variantOrder.length} combinations have a prompt` : 'import a theme first (Themes tab)'; renderSlots(); renderGallery(); }
+  function renderSlots() { const t = STATE.themes.find(x => x.slug === $('ltTheme').value); $('ltSlots').innerHTML = STATE.variantOrder.map(v => { const id = LT.slots[v]; const has = t && t.prompts[v].trim(); return `<div class="slot ${id ? 'has' : ''}" data-v="${v}" style="${has ? '' : 'opacity:.45'}">${id ? `<img src="/api/faces/${id}?token=${encodeURIComponent(TOKEN)}"><button class="x">✕</button>` : '<div style="padding:26px 4px;color:var(--mut)">no face</div>'}<div><b>${STATE.variants[v]}</b>${has ? '' : '<br><span class="note">no prompt</span>'}</div></div>`; }).join('');
+    $('ltSlots').querySelectorAll('.slot').forEach(sl => { const v = sl.dataset.v; const x = sl.querySelector('.x'); if (x) x.onclick = e => { e.stopPropagation(); delete LT.slots[v]; saveSlots(); renderSlots(); };
+      sl.onclick = () => { if (!LT.picked) return toast('Click a face first, then the combinations it should test', 'bad'); LT.slots[v] = LT.picked; saveSlots(); renderSlots(); }; }); }
+  function modelBoxes(el, ticked) { const list = MODELS.filter(m => m.edits || !$('modelEditsOnly').checked); el.innerHTML = list.map(m => `<label title="${esc(m.id)}"><input type="checkbox" value="${esc(m.id)}" ${ticked.includes(m.id) ? 'checked' : ''}> ${esc(m.name)}<span class="p">${m.price != null ? '$' + (+m.price).toFixed(3) : ''}</span></label>`).join('') || `<span class="note">${STATE.hasKey ? 'no models loaded — press "Refresh list" in Settings' : 'add OPENROUTER_API_KEY first'}</span>`; }
+  const ticked = el => Array.from(el.querySelectorAll('input:checked')).map(i => i.value);
+  $('ltAll').onclick = () => { const d = STATE.settings.models; $('ltModels').querySelectorAll('input').forEach(i => i.checked = d.includes(i.value)); };
+  $('ltNone').onclick = () => $('ltModels').querySelectorAll('input').forEach(i => i.checked = false);
+  $('ltRun').onclick = async () => { const t = STATE.themes.find(x => x.slug === $('ltTheme').value); if (!t) return toast('Pick a theme', 'bad'); const models = ticked($('ltModels')); if (!models.length) return toast('Tick at least one model', 'bad');
+    const faces = {}; for (const v of STATE.variantOrder) if (LT.slots[v] && t.prompts[v].trim()) faces[v] = LT.slots[v]; const n = Object.keys(faces).length; if (!n) return toast('Give at least one combination a face', 'bad');
+    $('ltRun').disabled = true; $('ltMsg').textContent = `starting ${n * models.length} generation${n * models.length > 1 ? 's' : ''}…`;
+    try { const r = await api('/api/test/theme', { method: 'POST', json: { theme: t.slug, faces, models, opts: { quality: $('ltQuality').value, resolution: $('ltRes').value, aspect: $('ltAspect').value } } }); LT.lastBatch = r.batch; $('ltMsg').textContent = `${r.runs.length} running — cards fill in as they finish`; await loadRuns(); } catch (e) { $('ltMsg').textContent = ''; toast(e.message, 'bad'); }
+    $('ltRun').disabled = false; };
+  function card(r) { const busy = r.status === 'processing'; const el = busy && r.startedAt ? Math.round((Date.now() - r.startedAt) / 1000) : 0; const tgt = r.themeName ? `${r.themeName}${r.variant ? ' · ' + STATE.variants[r.variant] : ''}` : 'studio';
+    return `<div class="lab ${r.star ? 'star' : ''}" data-id="${r.id}">${r.star ? '<div class="tag">★ STARRED</div>' : ''}${r.out ? `<a href="${r.out}?token=${encodeURIComponent(TOKEN)}" target="_blank"><img src="${r.out}?thumb=1&token=${encodeURIComponent(TOKEN)}&v=${r.doneAt || 0}"></a>` : busy ? `<div class="wait"><div class="spin"></div><div>${r.note || 'queued'}${el ? ` · ${el}s` : ''}</div></div>` : `<div class="fail">✗ ${esc(r.error || 'failed')}</div>`}<div class="b">
+      <div class="m">${esc(r.model)}</div><div class="note">${esc(tgt)}${r.seconds ? ` · ${r.seconds}s` : ''}${r.cost != null ? ` · <b>${money(r.cost)}</b>` : ''}${r.dropped && r.dropped.length ? ` · <span title="this model rejected these options so they were left out">no ${r.dropped.join('/')}</span>` : ''}</div>
+      <div class="p" title="${esc(r.prompt)}">${esc(r.prompt)}</div>
+      <div class="acts">${r.out ? `<button data-star="${r.id}" title="Keep this one — survives Clear">${r.star ? '★ Unstar' : '☆ Star'}</button>${r.theme && r.variant ? `<button data-apply="${r.id}" title="Make this prompt + model the theme's saved prompt for this combination">Use this prompt</button>` : ''}${r.theme ? `<button data-thumb="${r.id}">Make thumbnail</button>` : ''}<a href="${r.out}?download=1&token=${encodeURIComponent(TOKEN)}"><button>PNG</button></a>` : ''}<button data-edit="${r.id}" title="Open in the Generator studio">Edit</button><button class="danger" data-del="${r.id}">✕</button></div></div></div>`; }
+  function wire(root) {
+    root.querySelectorAll('[data-star]').forEach(b => b.onclick = async () => { await api('/api/runs/' + b.dataset.star + '/star', { method: 'POST', json: {} }); loadRuns(); });
+    root.querySelectorAll('[data-apply]').forEach(b => b.onclick = async () => { const r = RUNS.find(x => x.id === b.dataset.apply); if (!confirm(`Save this prompt as ${r.themeName} · ${STATE.variants[r.variant]} (and note ${r.model} as its model)?`)) return; await api('/api/runs/' + r.id + '/apply', { method: 'POST', json: {} }); toast('Saved into the theme'); refresh(); });
+    root.querySelectorAll('[data-thumb]').forEach(b => b.onclick = async () => { const r = RUNS.find(x => x.id === b.dataset.thumb); await api('/api/runs/' + r.id + '/thumb', { method: 'POST', json: {} }); toast(`${r.themeName} thumbnail updated`); refresh(); });
+    root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const r = RUNS.find(x => x.id === b.dataset.edit); $('stPrompt').value = r.prompt; ST.face = r.face; if (r.theme) $('stTheme').value = r.theme; if (r.variant) $('stVar').value = r.variant; $('stModels').querySelectorAll('input').forEach(i => i.checked = i.value === r.model); renderFaces(); cnt(); tab('studio'); window.scrollTo(0, 0); });
+    root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { const r = RUNS.find(x => x.id === b.dataset.del); if (r && r.star && !confirm('This one is starred. Delete it anyway?')) return; await api('/api/runs/' + b.dataset.del, { method: 'DELETE' }); loadRuns(); }); }
+  async function loadRuns() { try { const d = await api('/api/runs'); RUNS = d.runs; } catch (_) { RUNS = []; } renderGallery(); renderStudio(); const busy = RUNS.some(r => r.status === 'processing'); if (busy && !poll) poll = setInterval(loadRuns, 3000); if (!busy && poll) { clearInterval(poll); poll = null; } }
+  function renderGallery() { const slug = $('ltTheme').value; const t = STATE.themes.find(x => x.slug === slug); let all = RUNS.filter(r => r.kind === 'theme' && r.theme === slug); if ($('galOnlyLast').checked && all.length) { const b = all[0].batch; all = all.filter(r => r.batch === b); }
+    const rows = STATE.variantOrder.map(v => ({ v, cells: all.filter(r => r.variant === v) })).filter(r => r.cells.length); const spent = all.reduce((a, r) => a + (r.cost || 0), 0);
+    $('galTitle').textContent = `${t ? t.name : 'Theme'} — generated images`; $('galCount').textContent = all.length ? `${all.length} image${all.length === 1 ? '' : 's'}${spent ? ' · ' + money(spent) + ' spent' : ''}` : '';
+    $('ltGrid').innerHTML = rows.map(r => `<div class="bRow"><div><h4>${STATE.variants[r.v]}</h4><div class="note">${r.cells.length} result${r.cells.length === 1 ? '' : 's'}</div></div><div class="labGrid">${r.cells.map(card).join('')}</div></div>`).join('') || '<div class="note">Nothing yet — give combinations a face, tick models, press Run.</div>'; wire($('ltGrid')); }
+  $('galOnlyLast').onchange = renderGallery;
+  $('galClear').onclick = async () => { const t = STATE.themes.find(x => x.slug === $('ltTheme').value); if (!t || !confirm(`Delete all generated images for ${t.name}? Starred ones are kept.`)) return; const r = await api('/api/runs/clear', { method: 'POST', json: { theme: t.slug, kind: 'theme', keepStarred: true } }); toast(`${r.n} removed`); loadRuns(); };
+
+  // ----- generator studio -----
+  const cnt = () => $('stCnt').textContent = $('stPrompt').value.length; $('stPrompt').addEventListener('input', cnt);
+  $('stLoad').onclick = () => { const t = STATE.themes.find(x => x.slug === $('stTheme').value); const v = $('stVar').value; if (!t || !v) return toast('Pick a theme and a combination first', 'bad'); $('stPrompt').value = t.prompts[v] || ''; cnt(); };
+  $('stRun').onclick = async () => { const models = ticked($('stModels')); if (!models.length) return toast('Tick at least one model', 'bad'); if (!$('stPrompt').value.trim()) return toast('Write a prompt', 'bad');
+    $('stRun').disabled = true; try { await api('/api/test/prompt', { method: 'POST', json: { prompt: $('stPrompt').value, face: ST.face, models, theme: $('stTheme').value || null, variant: $('stVar').value || null, opts: { quality: $('ltQuality').value, resolution: $('ltRes').value, aspect: $('ltAspect').value } } }); $('stMsg').textContent = `${models.length} running…`; await loadRuns(); } catch (e) { toast(e.message, 'bad'); } $('stRun').disabled = false; };
+  function renderStudio() { const rs = RUNS.filter(r => r.kind === 'studio'); $('stGrid').innerHTML = rs.map(card).join(''); wire($('stGrid')); if (!rs.some(r => r.status === 'processing')) $('stMsg').textContent = rs.length ? '' : $('stMsg').textContent; }
+  $('stClear').onclick = async () => { if (!confirm('Delete all studio results? Starred ones are kept.')) return; const r = await api('/api/runs/clear', { method: 'POST', json: { kind: 'studio', keepStarred: true } }); toast(`${r.n} removed`); loadRuns(); };
+
+  // ----- themes -----
+  function renderThemes() { $('themeGrid').innerHTML = STATE.themes.map(t => `<div class="theme ${editing === t.slug ? 'on' : ''}" data-slug="${t.slug}">${t.hasThumb ? `<img src="/api/themes/${t.slug}/thumb?token=${encodeURIComponent(TOKEN)}&v=${Date.now()}">` : '<div class="ph">no thumbnail</div>'}<div class="n">${esc(t.name)}<br><span class="note">${STATE.variantOrder.filter(v => t.prompts[v].trim()).length}/${STATE.variantOrder.length} prompts</span></div></div>`).join('') || '<div class="note">No themes yet — Import zip… or + New theme.</div>';
+    $('themeGrid').querySelectorAll('.theme').forEach(d => d.onclick = () => edit(d.dataset.slug)); if (editing) edit(editing); }
+  function edit(slug) { const t = STATE.themes.find(x => x.slug === slug); if (!t) { editing = null; $('themeEd').style.display = 'none'; return; } editing = slug; $('themeEd').style.display = ''; $('teName').textContent = t.name; $('teNameIn').value = t.name; $('teExport').href = '/api/themes/export?slug=' + slug + '&token=' + encodeURIComponent(TOKEN);
+    $('tePrompts').innerHTML = STATE.variantOrder.map(v => `<div class="prompt"><h3>${STATE.variants[v]} <span class="cnt">${(t.prompts[v] || '').length} chars${t.settings[modelKey(v)] ? ' · model: ' + esc(t.settings[modelKey(v)]) : ''}</span></h3><textarea data-v="${v}">${esc(t.prompts[v] || '')}</textarea></div>`).join('');
+    document.querySelectorAll('#themeGrid .theme').forEach(d => d.classList.toggle('on', d.dataset.slug === slug)); }
+  const FILE1 = { '1-male': 'single-male', '1-female': 'single-female', '2-male-male': 'two-males', '2-female-female': 'two-females', '2-male-female': 'male-left-female-right', '2-female-male': 'female-left-male-right', 'pet-male': 'male-pet', 'pet-female': 'female-pet' }; const modelKey = v => FILE1[v] + '.model';
+  $('teSave').onclick = async () => { const prompts = {}; $('tePrompts').querySelectorAll('textarea').forEach(ta => prompts[ta.dataset.v] = ta.value); try { await api('/api/themes/' + editing, { method: 'PUT', json: { name: $('teNameIn').value, prompts } }); $('teMsg').textContent = 'Saved ✓'; setTimeout(() => $('teMsg').textContent = '', 3000); refresh(); } catch (e) { toast(e.message, 'bad'); } };
+  $('teDelete').onclick = async () => { const t = STATE.themes.find(x => x.slug === editing); if (!confirm(`Delete theme "${t.name}" and its prompts? Generated images are kept.`)) return; await api('/api/themes/' + editing, { method: 'DELETE' }); editing = null; $('themeEd').style.display = 'none'; refresh(); };
+  $('teThumbBtn').onclick = () => $('teThumbIn').click(); $('teThumbIn').onchange = async () => { const f = $('teThumbIn').files[0]; $('teThumbIn').value = ''; if (!f) return; const fd = new FormData(); fd.append('thumb', f); await api('/api/themes/' + editing + '/thumb', { method: 'POST', body: fd }); toast('Thumbnail updated'); refresh(); };
+  $('teReplace').onclick = () => $('teZipIn').click(); $('teZipIn').onchange = async () => { const f = $('teZipIn').files[0]; $('teZipIn').value = ''; if (!f) return; await importZip(f, { target: editing, replace: true }); };
+  $('newTheme').onclick = async () => { const name = prompt('Theme name:'); if (!name) return; const t = await api('/api/themes', { method: 'POST', json: { name } }); editing = t.slug; refresh(); };
+  $('impBtn').onclick = () => $('impIn').click(); $('impIn').onchange = async () => { const f = $('impIn').files[0]; $('impIn').value = ''; if (!f) return; await importZip(f, { replace: $('impReplace').checked }); };
+  async function importZip(f, o) { const q = (o.target ? '&target=' + o.target : '') + (o.replace ? '&mode=replace' : ''); const fd = new FormData(); fd.append('zip', f);
+    try { const p = await api('/api/themes/import?preview=1' + q, { method: 'POST', body: fd }); const lines = p.themes.map(t => `• ${t.name}: ${t.isNew ? 'NEW' : 'update'} — ${t.prompts} prompt file${t.prompts === 1 ? '' : 's'}${t.replaced.length ? ', replaces ' + t.replaced.join(', ') : ''}${t.thumb ? ', thumbnail' : ''}${t.unknown.length ? ', ignored: ' + t.unknown.join(', ') : ''}`);
+      if (!confirm(`Import?\n\n${lines.join('\n')}`)) return; const fd2 = new FormData(); fd2.append('zip', f); const r = await api('/api/themes/import?x=1' + q, { method: 'POST', body: fd2 }); toast(`Imported ${r.themes.length} theme${r.themes.length === 1 ? '' : 's'}`); refresh(); } catch (e) { toast('Import failed: ' + e.message, 'bad'); } }
+
+  // ----- settings / models -----
+  async function keyStatus() { const el = $('keyState'); el.textContent = 'checking…'; try { const d = await api('/api/key'); el.innerHTML = !d.configured ? '<span class="bad">✗ not set</span>' : d.error ? `<span class="bad">✗ rejected: ${esc(d.error)}</span>` : `<span class="ok">✓ working</span>${d.label ? ' · ' + esc(d.label) : ''}${d.usage != null ? ` · spent $${(+d.usage).toFixed(2)} on this key` : ''}${d.remaining != null ? ` · $${(+d.remaining).toFixed(2)} left of its limit` : ''}`; } catch (e) { el.innerHTML = '<span class="bad">could not check</span>'; } }
+  $('keyCheck').onclick = keyStatus;
+  async function loadModels(force) { try { const d = await api('/api/models' + (force ? '?refresh=1' : '')); MODELS = d.models.sort((a, b) => a.id.localeCompare(b.id)); } catch (e) { MODELS = []; if (STATE.hasKey) toast('Could not load models: ' + e.message, 'bad'); } renderModelLists(); }
+  $('modelsRefresh').onclick = () => loadModels(true);
+  function renderModelLists() { const f = $('modelFilter').value.toLowerCase(); const list = MODELS.filter(m => (m.edits || !$('modelEditsOnly').checked) && (!f || m.id.toLowerCase().includes(f) || m.name.toLowerCase().includes(f))); const d = STATE.settings.models;
+    $('sModels').innerHTML = list.map(m => `<label title="${esc(m.id)}"><input type="checkbox" value="${esc(m.id)}" ${d.includes(m.id) ? 'checked' : ''}> ${esc(m.name)}<span class="p">${m.price != null ? '$' + (+m.price).toFixed(3) + '/img' : ''}${m.edits ? '' : ' · no photo input'}</span></label>`).join('') || `<span class="note">${STATE.hasKey ? 'no models match' : 'add OPENROUTER_API_KEY first'}</span>`;
+    $('modelCount').textContent = `${list.length} of ${MODELS.length} models`; modelBoxes($('ltModels'), d); modelBoxes($('stModels'), d); }
+  $('modelFilter').oninput = renderModelLists; $('modelEditsOnly').onchange = renderModelLists;
+  function renderSettings() { const s = STATE.settings; $('sQuality').value = s.quality || ''; $('sRes').value = s.resolution || ''; $('sAspect').value = s.aspect || ''; $('ltQuality').value = s.quality || ''; $('ltRes').value = s.resolution || ''; $('ltAspect').value = s.aspect || ''; }
+  $('sSave').onclick = async () => { await api('/api/settings', { method: 'POST', json: { models: STATE.settings.models.filter(m => !Array.from($('sModels').querySelectorAll('input')).some(i => i.value === m)).concat(ticked($('sModels'))), quality: $('sQuality').value, resolution: $('sRes').value, aspect: $('sAspect').value } }); $('sMsg').textContent = 'Saved ✓'; setTimeout(() => $('sMsg').textContent = '', 3000); await refresh(); renderModelLists(); };
+
+  if (TOKEN) refresh(); else showLogin();
+})();
+</script>
+</body>
+</html>

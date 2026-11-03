@@ -1,0 +1,20 @@
+{
+  "name": "sketchy-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sketchy Lab: test Sketchy Robotics theme prompts on reference faces across many image models via OpenRouter",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@replit/object-storage": "^1.0.0",
+    "adm-zip": "^0.5.16",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.5"
+  }
+}
