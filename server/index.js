@@ -45,6 +45,9 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sketchy';
 const OR_KEY = process.env.OPENROUTER_API_KEY || '';
 const OR_BASE = process.env.OPENROUTER_BASE || 'https://openrouter.ai/api/v1';
+const OAI_KEY = process.env.OPENAI_API_KEY || '';          // optional: your own OpenAI key — its image models show up as "openai-direct/…"
+const OAI_BASE = process.env.OPENAI_BASE || 'https://api.openai.com/v1';
+const DIRECT = 'openai-direct/';                            // model-id prefix for models that go straight to OpenAI instead of OpenRouter
 const PARALLEL = Math.max(1, Math.min(8, +process.env.LAB_PARALLEL || 4));
 
 // ---------- themes (same files as the booth: theme.json, prompts/<variant>.txt, thumb.png) ----------
@@ -105,6 +108,46 @@ const priceCache = new Map(); // model id -> per-image USD or null (from the per
 async function fillPrices(list) { const todo = list.filter(m => m.price == null && !priceCache.has(m.id)); let i = 0;
   const worker = async () => { while (i < todo.length) { const m = todo[i++]; try { const r = await fetch(`${OR_BASE}/images/models/${m.id}/endpoints`, { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({})); const eps = (d.data && (d.data.endpoints || d.data)) || d.endpoints || []; const arr = Array.isArray(eps) ? eps : [eps]; let p = null; for (const e of arr) { p = priceOf(e && e.pricing); if (p != null) break; } priceCache.set(m.id, p); } catch (_) { priceCache.set(m.id, null); } } };
   await Promise.all(Array.from({ length: 6 }, worker)); for (const m of list) if (m.price == null && priceCache.has(m.id)) m.price = priceCache.get(m.id); }
+// ---------- OpenAI direct (your own key) ----------
+const OAI_FALLBACK = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'chatgpt-image-latest'];
+let oaiCache = { at: 0, list: [] };
+const oaiModel = id => ({ id: DIRECT + id, name: 'OpenAI direct: ' + id, edits: true, params: ['quality', 'size', 'input_fidelity'], price: null, pricing: null, provider: 'openai-direct', out: ['image'], direct: true });
+async function oaiModels(force) { // image models on the OpenAI account; falls back to the known list if the listing fails
+  if (!OAI_KEY) return [];
+  if (!force && Date.now() - oaiCache.at < 600000 && oaiCache.list.length) return oaiCache.list;
+  let ids = [];
+  try { const r = await fetch(OAI_BASE + '/models', { headers: { Authorization: 'Bearer ' + OAI_KEY } }); const d = await r.json().catch(() => ({})); if (r.ok && Array.isArray(d.data)) ids = d.data.map(m => m.id).filter(id => /^(gpt-image|chatgpt-image)/.test(id)); } catch (_) {}
+  if (!ids.length) ids = OAI_FALLBACK;
+  const list = ids.sort().map(oaiModel); oaiCache = { at: Date.now(), list }; return list;
+}
+const allModels = async force => (await Promise.all([orModels(force).catch(e => { if (!OAI_KEY) throw e; return []; }), oaiModels(force)])).flat();
+const oaiSize = (aspect, model) => { const g2 = /gpt-image-2/.test(model); return ({ '2:3': '1024x1536', '3:4': g2 ? '1152x1536' : '1024x1536', '9:16': g2 ? '864x1536' : '1024x1536', '1:1': '1024x1024', '4:3': g2 ? '1536x1152' : '1536x1024', '16:9': g2 ? '1536x864' : '1536x1024' })[aspect] || null; };
+const oaiCost = (model, u) => { if (!u || !/^gpt-image-1(\.5)?$/.test(model)) return null; const det = u.input_tokens_details || {}; const img = det.image_tokens || 0, txt = det.text_tokens || (u.input_tokens || 0) - img; return Math.round(((u.output_tokens || 0) * 40 + img * 10 + txt * 5) / 1e6 * 1e4) / 1e4; }; // list prices for gpt-image-1; other models: unknown
+async function oaiImage(run) { // one OpenAI model on one face, straight to api.openai.com — returns { png, cost, ms, sent }
+  if (!OAI_KEY) throw new Error('OPENAI_API_KEY is not set in Secrets');
+  const model = run.model.slice(DIRECT.length); const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings(); const o = run.opts || {};
+  const fields = { model, prompt: run.fullPrompt || run.prompt, n: '1' };
+  const q = o.quality || s.quality; if (q) fields.quality = q === 'xhigh' || q === 'max' ? 'high' : q;
+  const size = oaiSize(o.aspect || s.aspect, model); if (size) fields.size = size;
+  if (s.background && !/gpt-image-2/.test(model)) fields.background = s.background;
+  if (face && !/mini/.test(model)) fields.input_fidelity = 'high';
+  if (!/dall-e/.test(model)) fields.output_format = 'png';
+  const t0 = Date.now(); const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 240000);
+  const tryOnce = async () => { let r;
+    if (face) { const fd = new FormData(); for (const [k, v] of Object.entries(fields)) fd.append(k, v); fd.append('image', new Blob([face], { type: 'image/jpeg' }), 'face.jpg'); r = await fetch(OAI_BASE + '/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY }, body: fd, signal: ctrl.signal }); }
+    else r = await fetch(OAI_BASE + '/images/generations', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY, 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({}, fields, { n: 1 })), signal: ctrl.signal });
+    const d = await r.json().catch(() => ({})); return { r, d }; };
+  try {
+    let { r, d } = await tryOnce();
+    for (let i = 0; i < 3 && !r.ok && r.status === 400; i++) { const msg = ((d.error && d.error.message) || '').toLowerCase(); const k = ['quality', 'size', 'input_fidelity', 'background', 'output_format'].find(k => k in fields && msg.includes(k.replace('_', ' ')) || msg.includes(k)); if (!k) break; delete fields[k]; run.dropped = (run.dropped || []).concat(k); ({ r, d } = await tryOnce()); }
+    if ((r.status === 429 || r.status >= 500) && !run.retried) { run.retried = true; await new Promise(x => setTimeout(x, 8000)); ({ r, d } = await tryOnce()); }
+    if (!r.ok) throw new Error((d.error && d.error.message) || `OpenAI ${r.status}`);
+    const item = d.data && d.data[0]; if (!item || !item.b64_json) throw new Error('no image in the response');
+    let png = Buffer.from(item.b64_json, 'base64'); if (fields.output_format !== 'png') png = await sharp(png).png().toBuffer();
+    return { png, cost: oaiCost(model, d.usage), ms: Date.now() - t0, sent: Object.keys(fields).filter(k => k !== 'prompt' && k !== 'n') };
+  } finally { clearTimeout(timer); }
+}
+const genImage = run => run.model.startsWith(DIRECT) ? oaiImage(run) : orImage(run);
 async function orImage(run) { // one model on one face — returns { png, cost, ms }
   if (!OR_KEY) throw new Error('OPENROUTER_API_KEY is not set in Secrets');
   const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings();
@@ -138,7 +181,7 @@ const queue = []; let active = 0;
 function enqueue(r) { r.status = 'processing'; r.note = 'queued'; saveRun(r); queue.push(r); pump(); }
 function pump() {
   while (active < PARALLEL && queue.length) { const r = queue.shift(); active++; r.note = 'generating…'; r.startedAt = Date.now(); saveRun(r);
-    orImage(r).then(async ({ png, cost, ms, sent }) => { fs.writeFileSync(path.join(RUNS, r.id, 'out.png'), png); persist(path.join(RUNS, r.id, 'out.png')); await sharp(png).resize(420, 420, { fit: 'inside' }).png().toFile(path.join(RUNS, r.id, 'thumb.png')); persist(path.join(RUNS, r.id, 'thumb.png'));
+    genImage(r).then(async ({ png, cost, ms, sent }) => { fs.writeFileSync(path.join(RUNS, r.id, 'out.png'), png); persist(path.join(RUNS, r.id, 'out.png')); await sharp(png).resize(420, 420, { fit: 'inside' }).png().toFile(path.join(RUNS, r.id, 'thumb.png')); persist(path.join(RUNS, r.id, 'thumb.png'));
       Object.assign(r, { status: 'done', cost, seconds: Math.round(ms / 100) / 10, sent, note: null, error: null, doneAt: Date.now() }); })
       .catch(e => { Object.assign(r, { status: 'failed', error: String(e.message || e), note: null, doneAt: Date.now() }); console.error('run', r.id, r.model, r.error); })
       .finally(() => { saveRun(r); active--; setTimeout(pump, 50); }); }
@@ -152,18 +195,19 @@ app.use('/', express.static(path.join(ROOT, 'public')));
 const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.query.token; if (t && t === ADMIN_PASSWORD) return next(); res.status(401).json({ error: 'bad password' }); };
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
-app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
+app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
 app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 // hide a model everywhere in the lab (it's still on OpenRouter; un-hide it from Settings → "show hidden"). Hiding also drops it from favorites and the default ticks.
 app.post('/api/hidden/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); const h = Array.isArray(s.hidden) ? s.hidden : [];
   if (h.includes(id)) s.hidden = h.filter(m => m !== id); else { s.hidden = h.concat(id); s.favorites = (s.favorites || []).filter(m => m !== id); s.models = (s.models || []).filter(m => m !== id); }
   saveSettings(s); res.json({ ok: true, hidden: s.hidden, favorites: s.favorites, models: s.models }); });
-app.get('/api/models', auth, async (req, res) => { try { res.json({ models: await orModels(req.query.refresh === '1'), hasKey: !!OR_KEY }); } catch (e) { res.status(502).json({ error: e.message, hasKey: !!OR_KEY }); } });
-app.get('/api/key', auth, async (req, res) => { // is the OpenRouter key good, and what's the balance
-  if (!OR_KEY) return res.json({ configured: false });
-  try { const r = await fetch(OR_BASE + '/key', { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenRouter ${r.status}`); const k = d.data || d; res.json({ configured: true, label: k.label, usage: k.usage, limit: k.limit, remaining: k.limit_remaining != null ? k.limit_remaining : null }); }
-  catch (e) { res.json({ configured: true, error: e.message }); }
+app.get('/api/models', auth, async (req, res) => { try { res.json({ models: await allModels(req.query.refresh === '1'), hasKey: !!(OR_KEY || OAI_KEY) }); } catch (e) { res.status(502).json({ error: e.message, hasKey: !!(OR_KEY || OAI_KEY) }); } });
+app.get('/api/key', auth, async (req, res) => { // are the OpenRouter / OpenAI keys good (and OpenRouter's balance)
+  const out = { configured: !!OR_KEY, openai: { configured: !!OAI_KEY } };
+  if (OR_KEY) { try { const r = await fetch(OR_BASE + '/key', { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenRouter ${r.status}`); const k = d.data || d; Object.assign(out, { label: k.label, usage: k.usage, limit: k.limit, remaining: k.limit_remaining != null ? k.limit_remaining : null }); } catch (e) { out.error = e.message; } }
+  if (OAI_KEY) { try { const r = await fetch(OAI_BASE + '/models', { headers: { Authorization: 'Bearer ' + OAI_KEY } }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenAI ${r.status}`); out.openai.models = (Array.isArray(d.data) ? d.data.map(m => m.id).filter(id => /^(gpt-image|chatgpt-image)/.test(id)) : []).length; } catch (e) { out.openai.error = e.message; } }
+  res.json(out);
 });
 
 // themes
@@ -234,6 +278,20 @@ app.post('/api/test/prompt', auth, (req, res) => {
   const batch = 'b' + Date.now().toString(36); const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const out = [];
   const fd = foundationFor(t, req.body.foundation);
   for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
+  res.json({ ok: true, batch, runs: out });
+});
+/** matrix: { face, variant?, theme?, foundations: [id|'none'], prompts: [{label, text}], models, opts } → one run per foundation × prompt × model, all tagged with the matrix batch */
+app.post('/api/test/matrix', auth, (req, res) => {
+  const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
+  const prompts = (Array.isArray(req.body.prompts) ? req.body.prompts : []).map((p, i) => ({ label: String(p.label || 'Prompt ' + 'ABCD'[i] || i + 1).slice(0, 40), text: String(p.text || '').trim() })).filter(p => p.text).slice(0, 4); if (!prompts.length) return res.status(400).json({ error: 'write at least one prompt' });
+  const s = getSettings(); const fids = (Array.isArray(req.body.foundations) ? req.body.foundations : []).map(String).slice(0, 4); if (!fids.length) return res.status(400).json({ error: 'tick at least one foundation' });
+  const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const variant = VARIANTS.includes(req.body.variant) ? req.body.variant : null;
+  const batch = 'm' + Date.now().toString(36); const out = [];
+  for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fd.name : null; if (fname === null) continue;
+    for (const p of prompts) for (const model of models) {
+      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, opts: req.body.opts || {}, createdAt: Date.now() };
+      enqueue(r); out.push(pubRun(r)); } }
+  if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
 });
 app.get('/api/costs.csv', auth, (req, res) => { const rows = [...runs.values()].filter(r => r.status === 'done').sort((a, b) => a.createdAt - b.createdAt).map(r => [new Date(r.createdAt).toISOString(), r.kind, r.themeName || '', VARIANT_LABELS[r.variant] || '', r.model, r.seconds || '', r.cost != null ? r.cost.toFixed(4) : '']); const esc = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
