@@ -86,16 +86,22 @@ const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, nu
 
 // ---------- OpenRouter ----------
 let modelCache = { at: 0, list: [] };
-async function orModels(force) { // image-capable models; cached for 10 minutes
+async function orModels(force) { // image-capable models; cached for 10 minutes. supported_parameters is an object keyed by parameter name
   if (!OR_KEY) return [];
   if (!force && Date.now() - modelCache.at < 600000 && modelCache.list.length) return modelCache.list;
   const r = await fetch(OR_BASE + '/images/models', { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((d.error && d.error.message) || `OpenRouter ${r.status}`);
   const raw = Array.isArray(d.data) ? d.data : Array.isArray(d.models) ? d.models : Array.isArray(d) ? d : [];
-  const list = raw.map(m => { const id = m.id || m.slug || m.canonical_slug; const sp = m.supported_parameters || m.supportedParameters || []; const inp = m.input_modalities || (m.architecture && m.architecture.input_modalities) || []; const pr = m.pricing || {};
-    return { id, name: m.name || id, edits: sp.includes('input_references') || inp.includes('image'), params: sp, price: pr.image != null ? +pr.image : pr.per_image != null ? +pr.per_image : null, pricing: pr, provider: String(id).split('/')[0] }; }).filter(m => m.id);
-  modelCache = { at: Date.now(), list }; return list;
+  const list = raw.map(m => { const id = m.id || m.slug || m.canonical_slug; const spRaw = m.supported_parameters || m.supportedParameters || {}; const sp = Array.isArray(spRaw) ? spRaw : Object.keys(spRaw); const refs = !Array.isArray(spRaw) && spRaw.input_references && spRaw.input_references.max != null ? +spRaw.input_references.max : null;
+    const arch = m.architecture || {}; const inp = m.input_modalities || arch.input_modalities || []; const out = m.output_modalities || arch.output_modalities || ['image'];
+    return { id, name: m.name || id, edits: (sp.includes('input_references') && refs !== 0) || inp.includes('image'), params: sp, price: priceOf(m.pricing), pricing: m.pricing || null, provider: String(id).split('/')[0], out }; }).filter(m => m.id && m.out.includes('image'));
+  modelCache = { at: Date.now(), list }; fillPrices(list).catch(() => {}); return list;
 }
+function priceOf(pr) { if (!pr || typeof pr !== 'object') return null; for (const k of ['image', 'per_image', 'image_output', 'output_image']) if (pr[k] != null && isFinite(+pr[k])) return +pr[k]; return null; }
+const priceCache = new Map(); // model id -> per-image USD or null (from the per-model endpoints listing, fetched in the background)
+async function fillPrices(list) { const todo = list.filter(m => m.price == null && !priceCache.has(m.id)); let i = 0;
+  const worker = async () => { while (i < todo.length) { const m = todo[i++]; try { const r = await fetch(`${OR_BASE}/images/models/${m.id}/endpoints`, { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({})); const eps = (d.data && (d.data.endpoints || d.data)) || d.endpoints || []; const arr = Array.isArray(eps) ? eps : [eps]; let p = null; for (const e of arr) { p = priceOf(e && e.pricing); if (p != null) break; } priceCache.set(m.id, p); } catch (_) { priceCache.set(m.id, null); } } };
+  await Promise.all(Array.from({ length: 6 }, worker)); for (const m of list) if (m.price == null && priceCache.has(m.id)) m.price = priceCache.get(m.id); }
 async function orImage(run) { // one model on one face — returns { png, cost, ms }
   if (!OR_KEY) throw new Error('OPENROUTER_API_KEY is not set in Secrets');
   const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings();
