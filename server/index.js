@@ -83,7 +83,9 @@ function parseZipThemes(buf, targetName) {
 }
 
 // ---------- settings ----------
-const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', moderation: '', note: '' };
+const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', moderation: '', note: '', refinePrompt: '', judgeModel: 'gpt-5.4-mini', autoJudge: false };
+const DEFAULT_REFINE = `Image 1 is a black-line drawing; image 2 is a photo of the real person it depicts. Change ONLY the line quality of image 1. Make every stroke one uniform thin round-capped black line of identical width; remove every fill, grey tone, gradient, shadow, hatching, stippling and texture; open any filled pupil into a small ring inside an open iris with white between; keep every enclosed area pure white; keep at least two line-widths of white between separate strokes; delete stray specks and fragments. Do not change the face, likeness, expression, pose, hair silhouette, costume, props, composition or framing in any way, and do not add anything. Pure white background, no text. Output exactly one image.`;
+const refineText = s => (s.refinePrompt || '').trim() || DEFAULT_REFINE;
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
 const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); persist(SETTINGS_FILE); };
 
@@ -125,7 +127,7 @@ const oaiSize = (aspect, model) => { const g2 = /gpt-image-2/.test(model); retur
 const oaiCost = (model, u) => { if (!u) return null; const det = u.input_tokens_details || {}; const img = det.image_tokens || 0, txt = det.text_tokens || (u.input_tokens || 0) - img; const r = /^gpt-image-1(\.5)?$/.test(model) ? [40, 10, 5] : /^gpt-image-2/.test(model) ? [30, 8, 5] : null; if (!r) return null; return Math.round(((u.output_tokens || 0) * r[0] + img * r[1] + txt * r[2]) / 1e6 * 1e4) / 1e4; }; // published per-million token rates: gpt-image-1/1.5 and gpt-image-2/2.5
 async function oaiImage(run) { // one OpenAI model on one face, straight to api.openai.com — returns { png, cost, ms, sent }
   if (!OAI_KEY) throw new Error('OPENAI_API_KEY is not set in Secrets');
-  const model = run.model.slice(DIRECT.length); const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings(); const o = run.opts || {};
+  const model = run.model.slice(DIRECT.length); const imgs = await inputImages(run); const face = imgs.length ? imgs : null; const s = getSettings(); const o = run.opts || {};
   const fields = { model, prompt: run.fullPrompt || run.prompt, n: '1' };
   const q = o.quality || s.quality; if (q) fields.quality = (q === 'xhigh' || q === 'max') && !/gpt-image-2\.5/.test(model) ? 'high' : q; // xhigh/max exist only on 2.5
   const size = oaiSize(o.aspect || s.aspect, model); if (size) fields.size = size;
@@ -135,7 +137,7 @@ async function oaiImage(run) { // one OpenAI model on one face, straight to api.
   if (!/dall-e/.test(model)) fields.output_format = 'png';
   const t0 = Date.now(); const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 240000);
   const tryOnce = async () => { let r;
-    if (face) { const fd = new FormData(); for (const [k, v] of Object.entries(fields)) fd.append(k, v); fd.append('image', new Blob([face], { type: 'image/jpeg' }), 'face.jpg'); r = await fetch(OAI_BASE + '/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY }, body: fd, signal: ctrl.signal }); }
+    if (face) { const fd = new FormData(); for (const [k, v] of Object.entries(fields)) fd.append(k, v); for (const im of imgs) fd.append('image[]', new Blob([im.buf], { type: im.mime }), im.name); r = await fetch(OAI_BASE + '/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY }, body: fd, signal: ctrl.signal }); }
     else r = await fetch(OAI_BASE + '/images/generations', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY, 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({}, fields, { n: 1 })), signal: ctrl.signal });
     const d = await r.json().catch(() => ({})); return { r, d }; };
   try {
@@ -148,12 +150,14 @@ async function oaiImage(run) { // one OpenAI model on one face, straight to api.
     return { png, cost: oaiCost(model, d.usage), ms: Date.now() - t0, sent: Object.keys(fields).filter(k => k !== 'prompt' && k !== 'n') };
   } finally { clearTimeout(timer); }
 }
+/** the reference images a run sends: a refine run sends the drawing it refines first, then the real face (if any); a normal run sends the face */
+async function inputImages(run) { const out = []; if (run.refineOf) { const f = path.join(RUNS, run.refineOf, 'out.png'); if (await ensureLocal(f)) out.push({ buf: fs.readFileSync(f), mime: 'image/png', name: 'drawing.png' }); } const face = run.face ? await faceBuffer(run.face) : null; if (face) out.push({ buf: face, mime: 'image/jpeg', name: 'face.jpg' }); return out; }
 const genImage = run => run.model.startsWith(DIRECT) ? oaiImage(run) : orImage(run);
 async function orImage(run) { // one model on one face — returns { png, cost, ms }
   if (!OR_KEY) throw new Error('OPENROUTER_API_KEY is not set in Secrets');
-  const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings();
+  const imgs = await inputImages(run); const s = getSettings();
   const body = { model: run.model, prompt: run.fullPrompt || run.prompt, n: 1, output_format: 'png' };
-  if (face) body.input_references = [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + face.toString('base64') } }];
+  if (imgs.length) body.input_references = imgs.map(im => ({ type: 'image_url', image_url: { url: `data:${im.mime};base64,` + im.buf.toString('base64') } }));
   const o = run.opts || {}; if (o.quality || s.quality) body.quality = o.quality || s.quality; if (o.resolution || s.resolution) body.resolution = o.resolution || s.resolution; if (o.aspect || s.aspect) body.aspect_ratio = o.aspect || s.aspect; if (s.background) body.background = s.background;
   const t0 = Date.now(); const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 240000);
   const tryOnce = async () => { const r = await fetch(OR_BASE + '/images', { method: 'POST', headers: { Authorization: 'Bearer ' + OR_KEY, 'content-type': 'application/json', 'HTTP-Referer': 'https://sketchyrobotics.com', 'X-Title': 'Sketchy Lab' }, body: JSON.stringify(body), signal: ctrl.signal }); const d = await r.json().catch(() => ({})); return { r, d }; };
@@ -167,6 +171,25 @@ async function orImage(run) { // one model on one face — returns { png, cost, 
     let png = Buffer.from(item.b64_json, 'base64'); if (item.media_type && !/png/.test(item.media_type)) png = await sharp(png).png().toBuffer();
     return { png, cost: d.usage && d.usage.cost != null ? +d.usage.cost : null, ms: Date.now() - t0, sent: Object.keys(body).filter(k => k !== 'input_references' && k !== 'prompt') };
   } finally { clearTimeout(timer); }
+}
+
+// ---------- likeness judge (OpenAI vision model looks at the photo and the drawing) ----------
+async function judgeRun(r) {
+  if (!OAI_KEY) throw new Error('OPENAI_API_KEY is needed for the likeness judge');
+  const out = path.join(RUNS, r.id, 'out.png'); if (!(await ensureLocal(out))) throw new Error('no image to judge');
+  const face = r.face ? await faceBuffer(r.face) : null; const s = getSettings(); const model = s.judgeModel || 'gpt-5.4-mini';
+  const ask = face
+    ? `Image 1 is a photo of a real person. Image 2 is a black-line drawing that is supposed to be a recognisable portrait of that same person, to be drawn by a pen plotter. Judge it strictly. Reply with JSON only, no prose: {"likeness": 1-10 (would a friend recognise this person? 10 = unmistakable), "eyes": 1-10, "nose": 1-10, "mouth": 1-10, "hair": 1-10, "plottable": 1-10 (10 = pure thin uniform outlines, white interiors, no fills/grey/texture/hatching), "problems": ["up to 4 short phrases naming the worst specific problems, e.g. filled pupils, jaw too narrow, hatching in hair"], "verdict": "one sentence"}`
+    : `This is a black-line drawing meant to be drawn by a pen plotter with one thin pen. Judge it strictly. Reply with JSON only, no prose: {"plottable": 1-10 (10 = pure thin uniform outlines, white interiors, no fills/grey/texture/hatching), "problems": ["up to 4 short phrases naming the worst specific problems"], "verdict": "one sentence"}`;
+  const content = [{ type: 'input_text', text: ask }]; if (face) content.push({ type: 'input_image', image_url: 'data:image/jpeg;base64,' + face.toString('base64'), detail: 'high' });
+  content.push({ type: 'input_image', image_url: 'data:image/png;base64,' + fs.readFileSync(out).toString('base64'), detail: 'high' });
+  const rsp = await fetch(OAI_BASE + '/responses', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ model, input: [{ role: 'user', content }] }) });
+  const d = await rsp.json().catch(() => ({})); if (!rsp.ok) throw new Error((d.error && d.error.message) || `OpenAI ${rsp.status}`);
+  let text = d.output_text || ''; if (!text && Array.isArray(d.output)) for (const o of d.output) for (const c of (o.content || [])) if (c.type === 'output_text') text += c.text;
+  const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error('judge gave no JSON: ' + text.slice(0, 120));
+  const j = JSON.parse(m[0]); const n = v => v == null || isNaN(+v) ? null : Math.max(1, Math.min(10, Math.round(+v)));
+  r.judge = { likeness: n(j.likeness), eyes: n(j.eyes), nose: n(j.nose), mouth: n(j.mouth), hair: n(j.hair), plottable: n(j.plottable), problems: Array.isArray(j.problems) ? j.problems.slice(0, 4).map(String) : [], verdict: String(j.verdict || '').slice(0, 200), model, at: Date.now() };
+  saveRun(r); return r.judge;
 }
 
 // ---------- faces ----------
@@ -183,7 +206,8 @@ function enqueue(r) { r.status = 'processing'; r.note = 'queued'; saveRun(r); qu
 function pump() {
   while (active < PARALLEL && queue.length) { const r = queue.shift(); active++; r.note = 'generating…'; r.startedAt = Date.now(); saveRun(r);
     genImage(r).then(async ({ png, cost, ms, sent }) => { fs.writeFileSync(path.join(RUNS, r.id, 'out.png'), png); persist(path.join(RUNS, r.id, 'out.png')); await sharp(png).resize(420, 420, { fit: 'inside' }).png().toFile(path.join(RUNS, r.id, 'thumb.png')); persist(path.join(RUNS, r.id, 'thumb.png'));
-      Object.assign(r, { status: 'done', cost, seconds: Math.round(ms / 100) / 10, sent, note: null, error: null, doneAt: Date.now() }); })
+      Object.assign(r, { status: 'done', cost, seconds: Math.round(ms / 100) / 10, sent, note: null, error: null, doneAt: Date.now() }); saveRun(r);
+      if (getSettings().autoJudge && OAI_KEY) { try { await judgeRun(r); } catch (e) { r.judgeError = String(e.message || e); } } })
       .catch(e => { Object.assign(r, { status: 'failed', error: String(e.message || e), note: null, doneAt: Date.now() }); console.error('run', r.id, r.model, r.error); })
       .finally(() => { saveRun(r); active--; setTimeout(pump, 50); }); }
 }
@@ -196,8 +220,8 @@ app.use('/', express.static(path.join(ROOT, 'public')));
 const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.query.token; if (t && t === ADMIN_PASSWORD) return next(); res.status(401).json({ error: 'bad password' }); };
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
-app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.get('/api/state', auth, (req, res) => res.json({ settings: Object.assign(getSettings(), { defaultRefine: DEFAULT_REFINE }), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note', 'refinePrompt', 'judgeModel', 'autoJudge']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 // hide a model everywhere in the lab (it's still on OpenRouter; un-hide it from Settings → "show hidden"). Hiding also drops it from favorites and the default ticks.
 app.post('/api/hidden/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); const h = Array.isArray(s.hidden) ? s.hidden : [];
@@ -260,6 +284,16 @@ app.post('/api/runs/:id/star', auth, (req, res) => { const r = runs.get(req.para
 app.post('/api/runs/:id/thumb', auth, async (req, res) => { // make this result a theme's thumbnail
   const r = runs.get(req.params.id); const t = r && readTheme(req.body.theme || r.theme); if (!r || !t) return res.status(404).end(); const f = path.join(RUNS, r.id, 'out.png'); if (!(await ensureLocal(f))) return res.status(404).json({ error: 'no image' });
   await sharp(f).resize(700, 700, { fit: 'inside', withoutEnlargement: true }).png().toFile(path.join(THEMES, t.slug, 'thumb.png')); persist(path.join(THEMES, t.slug, 'thumb.png')); res.json({ ok: true, theme: t.slug }); });
+/** refine: a second pass that edits a finished drawing (plus the original face) with the refine prompt — same model unless { model } is given */
+app.post('/api/runs/:id/refine', auth, async (req, res) => { const src = runs.get(req.params.id); if (!src || src.status !== 'done') return res.status(404).json({ error: 'no finished image to refine' });
+  const f = path.join(RUNS, src.id, 'out.png'); if (!(await ensureLocal(f))) return res.status(404).json({ error: 'image missing' }); const s = getSettings();
+  const r = Object.assign({}, src, { id: crypto.randomBytes(6).toString('hex'), model: typeof req.body.model === 'string' && req.body.model ? req.body.model : src.model, refineOf: src.id, refined: true, prompt: src.prompt, fullPrompt: refineText(s), judge: undefined, judgeError: undefined, star: false, cost: undefined, seconds: undefined, sent: undefined, dropped: undefined, retried: undefined, out: undefined, doneAt: undefined, createdAt: Date.now() });
+  enqueue(r); res.json(pubRun(r)); });
+app.post('/api/runs/:id/judge', auth, async (req, res) => { const r = runs.get(req.params.id); if (!r || r.status !== 'done') return res.status(404).json({ error: 'no finished image to judge' }); try { res.json({ ok: true, judge: await judgeRun(r) }); } catch (e) { r.judgeError = String(e.message || e); saveRun(r); res.status(502).json({ error: e.message }); } });
+app.post('/api/runs/judge', auth, async (req, res) => { // judge every finished, unjudged run in a batch (or a list of ids)
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [...runs.values()].filter(r => r.batch === req.body.batch).map(r => r.id); const todo = ids.map(id => runs.get(id)).filter(r => r && r.status === 'done' && (!r.judge || req.body.force));
+  let n = 0; const errs = []; let i = 0; const worker = async () => { while (i < todo.length) { const r = todo[i++]; try { await judgeRun(r); n++; } catch (e) { r.judgeError = String(e.message || e); saveRun(r); errs.push(r.model + ': ' + e.message); } } };
+  await Promise.all(Array.from({ length: 3 }, worker)); res.json({ ok: true, judged: n, errors: errs.slice(0, 5) }); });
 app.post('/api/runs/:id/apply', auth, (req, res) => { // make this run's prompt the theme's saved prompt for its combination
   const r = runs.get(req.params.id); const t = r && readTheme(r.theme); if (!r || !t || !r.variant) return res.status(404).end(); t.prompts[r.variant] = r.prompt; t.settings[VARIANT_FILES[r.variant][0] + '.model'] = r.model; writeTheme(t.slug, t); res.json({ ok: true }); });
 /** theme test: { theme, faces: {variant: faceId}, models: [...], opts: {quality, resolution, aspect} } → one run per combination × model */
@@ -287,10 +321,11 @@ app.post('/api/test/matrix', auth, (req, res) => {
   const prompts = (Array.isArray(req.body.prompts) ? req.body.prompts : []).map((p, i) => ({ label: String(p.label || 'Prompt ' + 'ABCD'[i] || i + 1).slice(0, 40), text: String(p.text || '').trim() })).filter(p => p.text).slice(0, 4); if (!prompts.length) return res.status(400).json({ error: 'write at least one prompt' });
   const s = getSettings(); const fids = (Array.isArray(req.body.foundations) ? req.body.foundations : []).map(String).slice(0, 4); if (!fids.length) return res.status(400).json({ error: 'tick at least one foundation' });
   const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const variant = VARIANTS.includes(req.body.variant) ? req.body.variant : null;
+  const quals = (Array.isArray(req.body.qualities) && req.body.qualities.length ? req.body.qualities : [(req.body.opts || {}).quality || '']).map(q => String(q || '')).slice(0, 6); const multiQ = quals.length > 1;
   const batch = 'm' + Date.now().toString(36); const out = [];
   for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fd.name : null; if (fname === null) continue;
-    for (const p of prompts) for (const model of models) {
-      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() };
+    for (const p of prompts) for (const q of quals) for (const model of models) {
+      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, quality: multiQ ? (q || 'default') : null, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: Object.assign({}, req.body.opts || {}, { quality: q }), createdAt: Date.now() };
       enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
