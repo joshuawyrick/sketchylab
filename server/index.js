@@ -83,7 +83,7 @@ function parseZipThemes(buf, targetName) {
 }
 
 // ---------- settings ----------
-const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', note: '' };
+const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', moderation: '', note: '' };
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
 const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); persist(SETTINGS_FILE); };
 
@@ -109,7 +109,7 @@ async function fillPrices(list) { const todo = list.filter(m => m.price == null 
   const worker = async () => { while (i < todo.length) { const m = todo[i++]; try { const r = await fetch(`${OR_BASE}/images/models/${m.id}/endpoints`, { headers: { Authorization: 'Bearer ' + OR_KEY } }); const d = await r.json().catch(() => ({})); const eps = (d.data && (d.data.endpoints || d.data)) || d.endpoints || []; const arr = Array.isArray(eps) ? eps : [eps]; let p = null; for (const e of arr) { p = priceOf(e && e.pricing); if (p != null) break; } priceCache.set(m.id, p); } catch (_) { priceCache.set(m.id, null); } } };
   await Promise.all(Array.from({ length: 6 }, worker)); for (const m of list) if (m.price == null && priceCache.has(m.id)) m.price = priceCache.get(m.id); }
 // ---------- OpenAI direct (your own key) ----------
-const OAI_FALLBACK = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'chatgpt-image-latest'];
+const OAI_FALLBACK = ['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare', 'gpt-image-2', 'chatgpt-image-latest']; // gpt-image-1 retired Oct 2026, 1.5 retires Dec 2026
 let oaiCache = { at: 0, list: [] };
 const oaiModel = id => ({ id: DIRECT + id, name: 'OpenAI direct: ' + id, edits: true, params: ['quality', 'size', 'input_fidelity'], price: null, pricing: null, provider: 'openai-direct', out: ['image'], direct: true });
 async function oaiModels(force) { // image models on the OpenAI account; falls back to the known list if the listing fails
@@ -122,15 +122,16 @@ async function oaiModels(force) { // image models on the OpenAI account; falls b
 }
 const allModels = async force => (await Promise.all([orModels(force).catch(e => { if (!OAI_KEY) throw e; return []; }), oaiModels(force)])).flat();
 const oaiSize = (aspect, model) => { const g2 = /gpt-image-2/.test(model); return ({ '2:3': '1024x1536', '3:4': g2 ? '1152x1536' : '1024x1536', '9:16': g2 ? '864x1536' : '1024x1536', '1:1': '1024x1024', '4:3': g2 ? '1536x1152' : '1536x1024', '16:9': g2 ? '1536x864' : '1536x1024' })[aspect] || null; };
-const oaiCost = (model, u) => { if (!u || !/^gpt-image-1(\.5)?$/.test(model)) return null; const det = u.input_tokens_details || {}; const img = det.image_tokens || 0, txt = det.text_tokens || (u.input_tokens || 0) - img; return Math.round(((u.output_tokens || 0) * 40 + img * 10 + txt * 5) / 1e6 * 1e4) / 1e4; }; // list prices for gpt-image-1; other models: unknown
+const oaiCost = (model, u) => { if (!u) return null; const det = u.input_tokens_details || {}; const img = det.image_tokens || 0, txt = det.text_tokens || (u.input_tokens || 0) - img; const r = /^gpt-image-1(\.5)?$/.test(model) ? [40, 10, 5] : /^gpt-image-2/.test(model) ? [30, 8, 5] : null; if (!r) return null; return Math.round(((u.output_tokens || 0) * r[0] + img * r[1] + txt * r[2]) / 1e6 * 1e4) / 1e4; }; // published per-million token rates: gpt-image-1/1.5 and gpt-image-2/2.5
 async function oaiImage(run) { // one OpenAI model on one face, straight to api.openai.com — returns { png, cost, ms, sent }
   if (!OAI_KEY) throw new Error('OPENAI_API_KEY is not set in Secrets');
   const model = run.model.slice(DIRECT.length); const face = run.face ? await faceBuffer(run.face) : null; const s = getSettings(); const o = run.opts || {};
   const fields = { model, prompt: run.fullPrompt || run.prompt, n: '1' };
-  const q = o.quality || s.quality; if (q) fields.quality = q === 'xhigh' || q === 'max' ? 'high' : q;
+  const q = o.quality || s.quality; if (q) fields.quality = (q === 'xhigh' || q === 'max') && !/gpt-image-2\.5/.test(model) ? 'high' : q; // xhigh/max exist only on 2.5
   const size = oaiSize(o.aspect || s.aspect, model); if (size) fields.size = size;
   if (s.background && !/gpt-image-2/.test(model)) fields.background = s.background;
-  if (face && !/mini/.test(model)) fields.input_fidelity = 'high';
+  if (face && /^gpt-image-1(\.5)?$/.test(model)) fields.input_fidelity = 'high'; // gpt-image-2+ always use high input fidelity and reject the parameter
+  const mod = run.moderation || s.moderation; if (mod === 'low' || mod === 'auto') fields.moderation = mod;
   if (!/dall-e/.test(model)) fields.output_format = 'png';
   const t0 = Date.now(); const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 240000);
   const tryOnce = async () => { let r;
@@ -196,7 +197,7 @@ const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.que
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
 app.get('/api/state', auth, (req, res) => res.json({ settings: getSettings(), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 // hide a model everywhere in the lab (it's still on OpenRouter; un-hide it from Settings → "show hidden"). Hiding also drops it from favorites and the default ticks.
 app.post('/api/hidden/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); const h = Array.isArray(s.hidden) ? s.hidden : [];
@@ -267,7 +268,7 @@ app.post('/api/test/theme', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const faces = req.body.faces || {}; const batch = 'b' + Date.now().toString(36); const out = []; const fd = foundationFor(t, req.body.foundation);
   for (const v of VARIANTS) { const prompt = (t.prompts[v] || '').trim(); const face = faces[v]; if (!prompt || !face) continue;
-    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
+    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, moderation: t.settings.moderation || null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'nothing to run — give at least one combination a face (and make sure it has a prompt)' });
   res.json({ ok: true, batch, runs: out });
 });
@@ -277,7 +278,7 @@ app.post('/api/test/prompt', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const batch = 'b' + Date.now().toString(36); const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const out = [];
   const fd = foundationFor(t, req.body.foundation);
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
   res.json({ ok: true, batch, runs: out });
 });
 /** matrix: { face, variant?, theme?, foundations: [id|'none'], prompts: [{label, text}], models, opts } → one run per foundation × prompt × model, all tagged with the matrix batch */
@@ -289,7 +290,7 @@ app.post('/api/test/matrix', auth, (req, res) => {
   const batch = 'm' + Date.now().toString(36); const out = [];
   for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fd.name : null; if (fname === null) continue;
     for (const p of prompts) for (const model of models) {
-      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, opts: req.body.opts || {}, createdAt: Date.now() };
+      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() };
       enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
