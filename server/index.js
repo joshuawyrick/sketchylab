@@ -308,6 +308,26 @@ app.get('/api/judge-models', auth, async (req, res) => {
   catch (e) { res.json({ models: JUDGE_FALLBACK, source: 'built-in list (' + e.message + ')' }); }
 });
 
+// ---------- plotter preset test (Plotter Studio at /studio/): numbered presets, ratings, and a memory of the deleted ones ----------
+// Every preset is complete and clamped to what the arm's firmware allows. Numbers are never reused, so a number on a paper sheet always means the same preset.
+const PT_SPEED = { spDraw: [300, 18000, 3500], zoneSpeed: [20, 100, 60], spTravel: [1000, 18000, 7000], spZ: [300, 6000, 2000], acc: [30, 3000, 400], accT: [30, 3000, 1000], jerk: [1, 20, 5], zLift: [2, 15, 5] };
+const PT_CONV = { imgThr: [1, 254, 187], imgRes: [800, 3200, 2800], imgSpeck: [0, 100, 11], imgSmooth: [0, 8, 5], imgPrune: [0, 40, 4], fillX: [0, 5, 2], optJoin: [0, 3, 0.6], optMin: [0, 20, 1.5], optMinDetail: [0, 5, 1], optSimp: [0.01, 0.5, 0.05], optSimpDetail: [0.01, 0.2, 0.03] };
+const ptClamp = (v, [lo, hi, def]) => { const n = +v; return v == null || v === '' || !Number.isFinite(n) ? def : Math.max(lo, Math.min(hi, n)); };
+const ptGroup = (input, ranges) => { const out = {}; for (const k of Object.keys(ranges)) out[k] = ptClamp((input || {})[k], ranges[k]); return out; };
+function ptClean(raw) { const conv = ptGroup(raw.conv, PT_CONV); conv.imgDots = !raw.conv || raw.conv.imgDots !== false; return { name: String(raw.name || 'Preset').trim().slice(0, 40), blurb: String(raw.blurb || '').trim().slice(0, 140), speed: ptGroup(raw.speed, PT_SPEED), conv }; }
+const ptPrint = p => JSON.stringify([p.speed, p.conv]); // same settings = same preset, whatever it is called
+function ptNew(state, raw) { const c = ptClean(raw); return Object.assign(c, { n: state.nextN++, rating: 0, note: '', runs: [], deleted: false, addedAt: Date.now() }); }
+function ptState() { const s = getSettings(); if (s.plotterTest) return s.plotterTest; const state = { nextN: 1, presets: [] }; for (const raw of require('./plotter-presets.json')) state.presets.push(ptNew(state, raw)); s.plotterTest = state; saveSettings(s); return state; }
+function ptSave(state) { const s = getSettings(); s.plotterTest = state; saveSettings(s); }
+app.get('/api/plotter-test', auth, (req, res) => res.json(ptState()));
+app.post('/api/plotter-test/presets', auth, (req, res) => { // add a new batch; settings already tried (kept or deleted) are refused
+  const list = Array.isArray(req.body) ? req.body : req.body && req.body.presets; if (!Array.isArray(list) || !list.length) return res.status(400).json({ error: 'no presets found in that text' }); if (list.length > 20) return res.status(400).json({ error: 'add 20 or fewer at a time' });
+  const state = ptState(); const seen = new Set(state.presets.map(ptPrint)); const added = [], refused = [];
+  for (const raw of list) { if (!raw || typeof raw !== 'object') { refused.push('(unreadable)'); continue; } const f = ptPrint(ptClean(raw)); if (seen.has(f)) { refused.push(String(raw.name || 'Preset').slice(0, 40)); continue; } seen.add(f); const p = ptNew(state, raw); state.presets.push(p); added.push(p.n); }
+  ptSave(state); res.json({ added, refused, state }); });
+app.patch('/api/plotter-test/:n', auth, (req, res) => { const state = ptState(); const p = state.presets.find(x => x.n === +req.params.n); if (!p) return res.status(404).json({ error: 'no such preset' }); if ('rating' in req.body) p.rating = Math.max(0, Math.min(5, Math.round(+req.body.rating) || 0)); if ('note' in req.body) p.note = String(req.body.note || '').slice(0, 300); if ('deleted' in req.body) { p.deleted = !!req.body.deleted; p.deletedAt = p.deleted ? Date.now() : undefined; } ptSave(state); res.json(p); });
+app.post('/api/plotter-test/:n/run', auth, (req, res) => { const state = ptState(); const p = state.presets.find(x => x.n === +req.params.n); if (!p) return res.status(404).json({ error: 'no such preset' }); const b = req.body || {}; p.runs = (p.runs || []).concat({ at: Date.now(), seconds: Math.round(+b.seconds || 0), estSeconds: Math.round(+b.estSeconds || 0), strokes: Math.round(+b.strokes || 0), inkMm: Math.round(+b.inkMm || 0), picture: String(b.picture || '').slice(0, 120) }).slice(-20); ptSave(state); res.json(p); });
+
 // themes
 app.post('/api/themes/import', auth, upload.single('zip'), async (req, res) => {
   try {

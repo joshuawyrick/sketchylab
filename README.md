@@ -14,6 +14,7 @@ keep a library of reference faces, and run every combination's prompt across man
   and one foundation works as a quick scratchpad. Scores, hover zoom and a side-by-side compare strip.
 - **Foundations** — the "how" texts put in front of every prompt, and the refine prompt.
 - **Settings** — keys, the live model list (filter, favorites, hide), likeness judge and default prompt writer, run defaults, cost log CSV.
+- **Plotter Studio** (`/studio/`) — a preset test version of the booth's Plotter Studio for a DexArm (Chrome + USB). The speed and drawing settings are hidden: pick a numbered preset, draw, rate it, delete the losers. "Copy results for Claude" exports everything, and "Add new presets" takes a new batch. Deleted presets stay on record, and settings already tried can't be added again. The starting 10 are in `server/plotter-presets.json`. (Its page, `public/studio/index.html`, was made in the Replit project and is not in this repo yet.)
 
 Exports (`bake=1`) put each combination's foundation in front of its prompt, so the booth draws exactly what was tested,
 and translate model names for the booth (which calls OpenAI directly): `openai-direct/x` and `openai/x` become `x`;
@@ -40,4 +41,4 @@ One folder per theme; inside it one prompt file per combination (`single-male.md
 
 `bash test/run.sh` starts a fake OpenRouter/OpenAI (`test/fakeor.js`) and the server on :3457, then runs the Playwright
 test `test/builder.py`: the Theme builder end to end, the export, and a Prompt test run.
-Nothing in the tests touches the real OpenRouter.
+`test/presets.py` covers the Plotter Studio preset page (run it against a server on :3461). Nothing in the tests touches the real OpenRouter or OpenAI.
