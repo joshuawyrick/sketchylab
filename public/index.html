@@ -37,6 +37,7 @@
   .lab .fail{padding:14px;color:#b51f33;font-size:12px;aspect-ratio:2/3;overflow:auto}
   .lab .acts{display:flex;gap:5px;flex-wrap:wrap}.lab .acts button{padding:3px 7px;font-size:11.5px}
   table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase}
+  #live{display:none;position:sticky;top:49px;z-index:4;background:#0a3d91;color:#fff;padding:8px 18px;font:600 13px system-ui;align-items:center;gap:14px;flex-wrap:wrap}#live.on{display:flex}#live .spin{border-color:rgba(255,255,255,.35);border-top-color:#fff;width:16px;height:16px;border-width:3px}#live .bar{flex:1;min-width:160px;height:8px;background:rgba(255,255,255,.25);border-radius:4px;overflow:hidden}#live .bar i{display:block;height:100%;background:#7fd3ff;width:0;transition:width .4s}#live .dim{opacity:.8;font-weight:500}
   #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#0a0a0a;color:#fff;padding:12px 20px;border-radius:10px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}#toast.ok{background:var(--ok)}#toast.bad{background:var(--bad)}
 </style>
@@ -44,6 +45,7 @@
 <body>
 <header><svg class="logo" viewBox="60 150 1870 400"></svg><span class="t">Lab</span>
   <nav id="nav"><button data-t="lab" class="on">Image lab</button><button data-t="studio">Generator studio</button><button data-t="matrix">Matrix test</button><button data-t="themes">Themes</button><button data-t="found">Foundations</button><button data-t="settings">Models &amp; settings</button><span class="note" id="keyBar"></span></nav></header>
+<div id="live"><div class="spin"></div><span id="liveTxt"></span><div class="bar"><i id="liveBar"></i></div><span class="dim" id="liveApi"></span></div>
 <main>
   <div class="login card" id="login"><h2>Password</h2><input type="password" id="pw" placeholder="password"><div class="row" style="margin-top:10px"><button class="primary" id="loginBtn">Sign in</button><span id="loginErr" class="bad"></span></div></div>
 
@@ -221,7 +223,17 @@
     root.querySelectorAll('[data-thumb]').forEach(b => b.onclick = async () => { const r = RUNS.find(x => x.id === b.dataset.thumb); await api('/api/runs/' + r.id + '/thumb', { method: 'POST', json: {} }); toast(`${r.themeName} thumbnail updated`); refresh(); });
     root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const r = RUNS.find(x => x.id === b.dataset.edit); $('stPrompt').value = r.prompt; ST.face = r.face; if (r.theme) $('stTheme').value = r.theme; if (r.variant) $('stVar').value = r.variant; $('stModels').querySelectorAll('input').forEach(i => i.checked = i.value === r.model); renderFaces(); cnt(); tab('studio'); window.scrollTo(0, 0); });
     root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { const r = RUNS.find(x => x.id === b.dataset.del); if (r && r.star && !confirm('This one is starred. Delete it anyway?')) return; await api('/api/runs/' + b.dataset.del, { method: 'DELETE' }); loadRuns(); }); }
-  async function loadRuns() { try { const d = await api('/api/runs'); RUNS = d.runs; } catch (_) { RUNS = []; } renderGallery(); renderStudio(); renderMatrix(); const busy = RUNS.some(r => r.status === 'processing'); if (busy && !poll) poll = setInterval(loadRuns, 3000); if (!busy && poll) { clearInterval(poll); poll = null; } }
+  async function loadRuns() { try { const d = await api('/api/runs'); RUNS = d.runs; } catch (_) { RUNS = []; } renderGallery(); renderStudio(); renderMatrix(); renderLive(); const busy = RUNS.some(r => r.status === 'processing'); if (busy && !poll) poll = setInterval(loadRuns, 3000); if (!busy && poll) { clearInterval(poll); poll = null; } }
+  const KIND = { theme: 'Image lab', studio: 'Studio', matrix: 'Matrix' };
+  function renderLive() { // one strip, every tab: what is generating right now, through which API, and how far the current batch has got
+    const busy = RUNS.filter(r => r.status === 'processing'); const el = $('live'); el.classList.toggle('on', busy.length > 0); document.title = busy.length ? `(${busy.length}) Sketchy Lab` : 'Sketchy Lab';
+    if (!busy.length) return; const running = busy.filter(r => r.note && r.note !== 'queued'), queued = busy.length - running.length;
+    const batches = [...new Set(busy.map(r => r.batch))]; const inBatch = RUNS.filter(r => batches.includes(r.batch)); const done = inBatch.filter(r => r.status === 'done').length, failed = inBatch.filter(r => r.status === 'failed').length;
+    const kinds = [...new Set(busy.map(r => KIND[r.kind] || r.kind))].join(' + '); const oldest = Math.min(...inBatch.map(r => r.createdAt)); const secs = Math.round((Date.now() - oldest) / 1000);
+    $('liveTxt').textContent = `${kinds}: ${running.length} generating now, ${queued} waiting · ${done + failed} of ${inBatch.length} finished${failed ? ` (${failed} failed)` : ''} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    $('liveBar').style.width = Math.round((done + failed) / inBatch.length * 100) + '%';
+    const api = r => r.model.startsWith('openai-direct/') ? 'OpenAI direct' : 'OpenRouter'; const per = {}; for (const r of running) per[api(r)] = (per[api(r)] || 0) + 1; for (const r of busy.filter(r => !running.includes(r))) per[api(r)] = per[api(r)] || 0;
+    $('liveApi').textContent = 'via ' + Object.entries(per).map(([k, n]) => `${k}${n ? ' (' + n + ' running)' : ''}`).join(' + ') + (running.length ? ' · ' + running.map(r => r.model.replace('openai-direct/', '')).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(', ') : ''); }
   function renderGallery() { const slug = $('ltTheme').value; const t = STATE.themes.find(x => x.slug === slug); let all = RUNS.filter(r => r.kind === 'theme' && r.theme === slug); if ($('galOnlyLast').checked && all.length) { const b = all[0].batch; all = all.filter(r => r.batch === b); }
     const rows = STATE.variantOrder.map(v => ({ v, cells: all.filter(r => r.variant === v) })).filter(r => r.cells.length); const spent = all.reduce((a, r) => a + (r.cost || 0), 0);
     $('galTitle').textContent = `${t ? t.name : 'Theme'} — generated images`; $('galCount').textContent = all.length ? `${all.length} image${all.length === 1 ? '' : 's'}${spent ? ' · ' + money(spent) + ' spent' : ''}` : '';
