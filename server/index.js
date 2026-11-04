@@ -83,7 +83,7 @@ function parseZipThemes(buf, targetName) {
 }
 
 // ---------- settings ----------
-const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', moderation: '', note: '', refinePrompt: '', judgeModel: 'gpt-5.4-mini', autoJudge: false, showOpenRouter: true, showOpenAI: true, favOnly: false };
+const DEFAULT_SETTINGS = { models: ['openai/gpt-image-1'], favorites: [], hidden: [], foundations: [{ id: 'normal', name: 'Normal', text: '' }, { id: 'bighead', name: 'Big head', text: '' }], quality: '', resolution: '1K', aspect: '2:3', background: '', moderation: '', note: '', refinePrompt: '', judgeModel: 'gpt-5.4-mini', writerModel: '', autoJudge: false, showOpenRouter: true, showOpenAI: true, favOnly: false };
 const DEFAULT_REFINE = `Image 1 is a black-line drawing; image 2 is a photo of the real person it depicts. Change ONLY the line quality of image 1. Make every stroke one uniform thin round-capped black line of identical width; remove every fill, grey tone, gradient, shadow, hatching, stippling and texture; open any filled pupil into a small ring inside an open iris with white between; keep every enclosed area pure white; keep at least two line-widths of white between separate strokes; delete stray specks and fragments. Do not change the face, likeness, expression, pose, hair silhouette, costume, props, composition or framing in any way, and do not add anything. Pure white background, no text. Output exactly one image.`;
 const refineText = s => (s.refinePrompt || '').trim() || DEFAULT_REFINE;
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
@@ -212,6 +212,69 @@ function pump() {
       .finally(() => { saveRun(r); active--; setTimeout(pump, 50); }); }
 }
 
+// ---------- theme builder: an AI writes each combination's theme section from the owner's description + the chosen foundation ----------
+// data/themes/<slug>/builder.json = { description, rating, writerModel, drafts: [{ id, variant, prompt, status, error, note, writer, foundationId, createdAt }], kept: { variant: { runId, draftId, foundationId, at } } }
+const builderFile = slug => path.join(THEMES, slug, 'builder.json');
+function readBuilder(slug) { let b = {}; try { b = JSON.parse(fs.readFileSync(builderFile(slug), 'utf8')); } catch (_) {} return Object.assign({ description: '', rating: 'family', writerModel: '', drafts: [], kept: {} }, b); }
+function saveBuilder(slug, b) { fs.mkdirSync(path.join(THEMES, slug), { recursive: true }); fs.writeFileSync(builderFile(slug), JSON.stringify(b, null, 2)); persist(builderFile(slug)); }
+const foundationById = id => { const f = (getSettings().foundations || []).find(x => x.id === id); return f && f.text.trim() ? f : null; };
+const COMBO_SPEC = {
+  '1-male': 'Exactly one person: the man in the photo.',
+  '1-female': 'Exactly one person: the woman in the photo.',
+  '2-male-male': 'Exactly two people standing side by side: the two men in the photo, each keeping his own face, in the same left/right order as the photo.',
+  '2-female-female': 'Exactly two people standing side by side: the two women in the photo, each keeping her own face, in the same left/right order as the photo.',
+  '2-male-female': 'Exactly two people standing side by side: the man on the LEFT and the woman on the RIGHT, exactly as they stand in the photo.',
+  '2-female-male': 'Exactly two people standing side by side: the woman on the LEFT and the man on the RIGHT, exactly as they stand in the photo.',
+  'pet-male': 'The man in the photo with his pet from the photo. Keep the animal\'s real species, breed look, ears and markings; give it one small matching theme touch (a tiny hat, scarf or collar).',
+  'pet-female': 'The woman in the photo with her pet from the photo. Keep the animal\'s real species, breed look, ears and markings; give it one small matching theme touch (a tiny hat, scarf or collar).' };
+const WRITER_SYSTEM = `You write the THEME SECTION of an image-generation prompt for Sketchy Robotics, a caricature booth at parties. A guest's photo goes to an image model together with a prompt; the model draws the guest as black line art; a robot arm with one pen then draws that picture on paper in under three minutes.
+
+A fixed FOUNDATION text (given to you) is placed in front of your text. It already covers line style, face accuracy and drawing rules. Do not restate it, do not contradict it, and never mention pens, plotters, robots, SVG or G-code. Your text is the WHAT: who is in the picture and where they stand, full-body pose, expression, outfit, props and a minimal setting.
+
+Rules:
+- Call the people "the man in the photo", "the woman in the photo" and so on. Their faces, hairstyles, facial hair, glasses and skin features come from the photo. Never describe their facial features yourself and never change their hair unless a hat or helmet covers it.
+- Full figure from head to feet, centred, facing the viewer, the face large and completely unobstructed: no masks, no visor down, no hands, props, smoke or hair across the face.
+- Describe outfits and props as clear shapes and outlines: silhouette, panels, seams, straps, buckles, a few big folds. Avoid textures and fine detail that turn into scribbles: no sequins, glitter, lace, chainmail, fur texture, tiny patterns, text, logos, numbers or brand names.
+- Background: empty, or a simple ground line with at most one or two large props. No detailed scenery.
+- Bodies look fit, toned and flattering.
+- AUDIENCE family: tasteful and all-ages. AUDIENCE adult: an 18+ party crowd; make the styling confident, playful and sexy (form-fitting or revealing-but-clothed outfits, bold poses), with no nudity and nothing explicit.
+- HEAD big: a caricature with an oversized head (about one third of the figure's height) on a smaller stylised body. HEAD normal: realistic proportions.
+- When other combinations of this theme are already approved, reuse their outfit and prop descriptions so the whole theme reads as one set.
+- 150 to 300 words, plain sentences in one or two paragraphs. No headings, bullet points, markdown, title or quotation marks. Output only the theme section.`;
+function writerUser({ theme, b, variant, fd, others, note, previous, take, takes }) {
+  const head = fd && /big/i.test(fd.name + ' ' + fd.id) ? 'big' : (theme.settings.proportions === 'bighead' ? 'big' : 'normal');
+  const parts = [`FOUNDATION (goes in front of your text, word for word):\n<<<\n${fd ? fd.text.trim() : '(none)'}\n>>>`, `THEME NAME: ${theme.name}`, `AUDIENCE: ${b.rating === 'adult' ? 'adult' : 'family'}`, `HEAD: ${head}`,
+    `THEME DESCRIPTION FROM THE OWNER:\n<<<\n${(b.description || '').trim() || '(only the theme name — invent a fun, recognisable take on it)'}\n>>>`, `COMBINATION: ${VARIANT_LABELS[variant]}. ${COMBO_SPEC[variant]}`];
+  if (others.length) parts.push('ALREADY APPROVED COMBINATIONS (match their outfits and props):\n' + others.map(o => `- ${VARIANT_LABELS[o.v]}: ${o.text}`).join('\n'));
+  if (previous) parts.push(`PREVIOUS ATTEMPT FOR THIS COMBINATION (the owner wants a different take, keep what fits the theme):\n<<<\n${previous}\n>>>`);
+  if (note) parts.push(`OWNER'S NOTE FOR THIS ATTEMPT: ${note}`);
+  if (takes > 1) parts.push(`This is version ${take} of ${takes} written at the same time: pick a clearly different pose and outfit details from the other versions.`);
+  parts.push('Write the theme section now.'); return parts.join('\n\n');
+}
+const cleanWriter = t => String(t || '').replace(/^\s*#+\s.*$/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/\*\*|__/g, '').replace(/^["“]|["”]$/g, '').replace(/\n{3,}/g, '\n\n').trim();
+async function writeText(model, system, user) { // OpenAI direct when the id has no provider prefix, otherwise OpenRouter chat
+  const t0 = Date.now(); let text = '', usage = null;
+  if (!model.includes('/')) {
+    if (!OAI_KEY) throw new Error(`${model} needs OPENAI_API_KEY (or pick an OpenRouter model like openai/gpt-5.5)`);
+    const r = await fetch(OAI_BASE + '/responses', { method: 'POST', headers: { Authorization: 'Bearer ' + OAI_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ model, instructions: system, input: user }) });
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenAI ${r.status}`);
+    text = d.output_text || ''; if (!text && Array.isArray(d.output)) for (const o of d.output) for (const c of (o.content || [])) if (c.type === 'output_text') text += c.text; usage = d.usage || null;
+  } else {
+    if (!OR_KEY) throw new Error(`${model} goes through OpenRouter, but OPENROUTER_API_KEY is not set`);
+    const r = await fetch(OR_BASE + '/chat/completions', { method: 'POST', headers: { Authorization: 'Bearer ' + OR_KEY, 'content-type': 'application/json', 'HTTP-Referer': 'https://sketchyrobotics.com', 'X-Title': 'Sketchy Lab' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }) });
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error((d.error && d.error.message) || `OpenRouter ${r.status}`);
+    text = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || ''; usage = d.usage || null;
+  }
+  text = cleanWriter(text); if (!text) throw new Error('the writer model returned no text'); return { text, usage, ms: Date.now() - t0 };
+}
+const writerModelOf = b => (b.writerModel || getSettings().writerModel || (OAI_KEY ? 'gpt-5.5' : 'openai/gpt-5.5')).trim();
+let writing = 0; // drafts being written right now (the page polls while > 0)
+function buildRuns(t, b, d, models, face, opts, batch) { const fd = foundationById(d.foundationId); const out = [];
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'build', batch, theme: t.slug, themeName: t.name, variant: d.variant, draft: d.id, face: face || null, model, prompt: d.prompt, fullPrompt: withFoundation(fd, d.prompt), foundation: fd ? fd.name : null, foundationId: d.foundationId || null, moderation: t.settings.moderation || (b.rating === 'adult' ? 'low' : null), opts: opts || {}, createdAt: Date.now() }; enqueue(r); out.push(r); }
+  return out; }
+/** booth model names: the booth calls OpenAI directly, so "openai-direct/x" and OpenRouter's "openai/x" become "x"; anything else it can't run */
+const boothModel = m => { const s = String(m || '').trim(); if (!s) return ''; if (s.startsWith(DIRECT)) return s.slice(DIRECT.length); if (s.startsWith('openai/')) return s.slice(7); return s.includes('/') ? null : s; };
+
 // ---------- app ----------
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -221,7 +284,7 @@ const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.que
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
 app.get('/api/state', auth, (req, res) => res.json({ settings: Object.assign(getSettings(), { defaultRefine: DEFAULT_REFINE }), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note', 'refinePrompt', 'judgeModel', 'autoJudge', 'showOpenRouter', 'showOpenAI', 'favOnly']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note', 'refinePrompt', 'judgeModel', 'writerModel', 'autoJudge', 'showOpenRouter', 'showOpenAI', 'favOnly']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 // hide a model everywhere in the lab (it's still on OpenRouter; un-hide it from Settings → "show hidden"). Hiding also drops it from favorites and the default ticks.
 app.post('/api/hidden/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); const h = Array.isArray(s.hidden) ? s.hidden : [];
@@ -268,8 +331,10 @@ app.get('/api/themes/export', auth, async (req, res) => {
   const AdmZip = require('adm-zip'); const zip = new AdmZip(); const which = req.query.slug ? listThemes().filter(t => t.slug === req.query.slug) : listThemes();
   for (const t of which) { const dir = t.name.replace(/[\\/:*?"<>|]/g, '-');
     const fd = req.query.bake === '1' ? foundationFor(t, '') : null; // bake=1: foundation text goes in front of every prompt file, so the booth draws exactly what the lab tested
-    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fd, t.prompts[v].trim()), 'utf8'));
-    const lines = Object.entries(t.settings || {}).map(([k, v]) => `${k}: ${v}`); if (lines.length) zip.addFile(`${dir}/theme.txt`, Buffer.from(lines.join('\n') + '\n', 'utf8'));
+    const kept = readBuilder(t.slug).kept || {};
+    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) { const fv = req.query.bake === '1' && kept[v] && kept[v].foundationId ? foundationById(kept[v].foundationId) || fd : fd; zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fv, t.prompts[v].trim()), 'utf8')); }
+    const lines = []; for (const [k, v] of Object.entries(t.settings || {})) { if (/(^|\.)model$/.test(k)) { const bm = boothModel(v); if (bm) lines.push(`${k}: ${bm}`); else if (bm === null) lines.push(`# ${k.replace(/\.model$/, '')} was tested on ${v}; the booth only runs OpenAI models, so it will use the theme/default model`); } else lines.push(`${k}: ${v}`); }
+    if (lines.length) zip.addFile(`${dir}/theme.txt`, Buffer.from(lines.join('\n') + '\n', 'utf8'));
     const th = path.join(THEMES, t.slug, 'thumb.png'); if (await ensureLocal(th)) zip.addFile(`${dir}/thumbnail.png`, fs.readFileSync(th)); }
   res.setHeader('content-type', 'application/zip'); res.setHeader('content-disposition', `attachment; filename="${which.length === 1 ? which[0].name.replace(/[^\w.-]+/g, '-') : 'sketchy-themes'}.zip"`); res.send(zip.toBuffer());
 });
@@ -286,7 +351,7 @@ app.get('/api/faces/:id', auth, async (req, res) => { const b = await faceBuffer
 app.delete('/api/faces/:id', auth, (req, res) => { if (/^[a-f0-9]{16}$/.test(req.params.id)) { const f = path.join(FACES, req.params.id + '.jpg'); fs.rmSync(f, { force: true }); unpersistFile(f); } res.json({ ok: true }); });
 
 // runs
-app.get('/api/runs', auth, (req, res) => { let all = [...runs.values()].sort((a, b) => b.createdAt - a.createdAt); if (req.query.theme) all = all.filter(r => r.theme === req.query.theme); if (req.query.kind) all = all.filter(r => r.kind === req.query.kind); res.json({ runs: all.slice(0, +req.query.limit || 400).map(pubRun), active, queued: queue.length }); });
+app.get('/api/runs', auth, (req, res) => { let all = [...runs.values()].sort((a, b) => b.createdAt - a.createdAt); if (req.query.theme) all = all.filter(r => r.theme === req.query.theme); if (req.query.kind) all = all.filter(r => r.kind === req.query.kind); res.json({ runs: all.slice(0, +req.query.limit || 400).map(pubRun), active, queued: queue.length, writing }); });
 app.get('/api/runs/:id/out', auth, async (req, res) => { const f = path.join(RUNS, req.params.id, req.query.thumb ? 'thumb.png' : 'out.png'); if (!(await ensureLocal(f))) return res.status(404).end(); if (req.query.download) res.setHeader('content-disposition', `attachment; filename="${req.params.id}.png"`); res.sendFile(f); });
 app.delete('/api/runs/:id', auth, (req, res) => { const r = runs.get(req.params.id); if (r) { runs.delete(r.id); fs.rmSync(path.join(RUNS, r.id), { recursive: true, force: true }); unpersist(path.join(RUNS, r.id)); } res.json({ ok: true }); });
 app.post('/api/runs/clear', auth, (req, res) => { let n = 0; for (const r of [...runs.values()]) { if (req.body.theme && r.theme !== req.body.theme) continue; if (req.body.kind && r.kind !== req.body.kind) continue; if (req.body.keepStarred && r.star) continue; runs.delete(r.id); fs.rmSync(path.join(RUNS, r.id), { recursive: true, force: true }); unpersist(path.join(RUNS, r.id)); n++; } res.json({ ok: true, n }); });
@@ -340,6 +405,47 @@ app.post('/api/test/matrix', auth, (req, res) => {
   if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
 });
+// ----- theme builder -----
+app.get('/api/builder/:slug', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); res.json({ builder: readBuilder(t.slug), writer: writerModelOf(readBuilder(t.slug)) }); });
+app.post('/api/builder/:slug', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const b = readBuilder(t.slug); const q = req.body || {};
+  if ('description' in q) b.description = String(q.description || '').slice(0, 6000); if ('rating' in q) b.rating = q.rating === 'adult' ? 'adult' : 'family'; if ('writerModel' in q) b.writerModel = String(q.writerModel || '').trim().slice(0, 120); saveBuilder(t.slug, b);
+  const st = {}; if ('rating' in q) st.rating = b.rating; if ('foundation' in q) st.foundation = String(q.foundation || ''); if ('proportions' in q) st.proportions = q.proportions === 'bighead' ? 'bighead' : 'normal'; if (Object.keys(st).length) { t.settings = Object.assign({}, t.settings, st); writeTheme(t.slug, t); }
+  res.json({ ok: true, builder: b, theme: readTheme(t.slug) }); });
+/** write N drafts for each combination (in parallel), then test each draft on the face(s) with the ticked models
+    { variants:[...], perCombo, models:[...], faces:{v:faceId}, notes:{v:text}, opts } */
+app.post('/api/builder/:slug/write', auth, (req, res) => {
+  const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const b = readBuilder(t.slug); const q = req.body || {};
+  const variants = (Array.isArray(q.variants) ? q.variants : []).filter(v => VARIANTS.includes(v)); if (!variants.length) return res.status(400).json({ error: 'pick at least one combination' });
+  const models = (Array.isArray(q.models) ? q.models : []).filter(m => typeof m === 'string' && m).slice(0, 6); const per = Math.max(1, Math.min(3, +q.perCombo || 1));
+  const fid = t.settings.foundation || (t.settings.proportions === 'bighead' ? 'bighead' : 'normal'); const fd = foundationById(fid); const writer = writerModelOf(b); const batch = 'w' + Date.now().toString(36); const faces = q.faces || {}, notes = q.notes || {};
+  const others = VARIANTS.filter(v => t.prompts[v] && t.prompts[v].trim()).map(v => ({ v, text: t.prompts[v].trim().slice(0, 1500) }));
+  const made = [];
+  for (const v of variants) { const prev = [...b.drafts].reverse().find(d => d.variant === v && d.status === 'ready');
+    for (let k = 1; k <= per; k++) { const d = { id: crypto.randomBytes(5).toString('hex'), variant: v, prompt: '', status: 'writing', note: String(notes[v] || '').slice(0, 500), writer, foundationId: fd ? fid : null, batch, createdAt: Date.now() }; b.drafts.push(d); made.push(d);
+      const user = writerUser({ theme: t, b, variant: v, fd, others: others.filter(o => o.v !== v), note: d.note, previous: prev ? prev.prompt : (t.prompts[v] || '').trim() || null, take: k, takes: per });
+      writing++; writeText(writer, WRITER_SYSTEM, user).then(({ text, ms }) => { const nb = readBuilder(t.slug); const dd = nb.drafts.find(x => x.id === d.id); if (!dd) return; Object.assign(dd, { prompt: text, status: 'ready', seconds: Math.round(ms / 100) / 10 });
+          if (models.length && faces[v]) dd.runs = buildRuns(readTheme(t.slug), nb, dd, models, faces[v], q.opts, batch).map(r => r.id); saveBuilder(t.slug, nb); })
+        .catch(e => { const nb = readBuilder(t.slug); const dd = nb.drafts.find(x => x.id === d.id); if (dd) { dd.status = 'failed'; dd.error = String(e.message || e).slice(0, 300); saveBuilder(t.slug, nb); } console.error('writer', t.slug, v, e.message); })
+        .finally(() => { writing--; }); } }
+  saveBuilder(t.slug, b); res.json({ ok: true, batch, writer, drafts: made, untested: variants.filter(v => !faces[v]).map(v => VARIANT_LABELS[v]) });
+});
+/** test a draft again — same prompt, or an edited copy when { prompt } differs: { draftId, prompt?, models, face, opts } */
+app.post('/api/builder/:slug/rerun', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const b = readBuilder(t.slug); const q = req.body || {};
+  let d = b.drafts.find(x => x.id === q.draftId); if (!d) return res.status(404).json({ error: 'draft not found' }); const models = (Array.isArray(q.models) ? q.models : []).filter(m => typeof m === 'string' && m).slice(0, 6); if (!models.length) return res.status(400).json({ error: 'tick at least one image model' }); if (!q.face) return res.status(400).json({ error: 'give this combination a face first' });
+  const text = typeof q.prompt === 'string' ? cleanWriter(q.prompt) : null; if (text && text !== d.prompt) { d = Object.assign({}, d, { id: crypto.randomBytes(5).toString('hex'), prompt: text, edited: true, parent: d.id, note: '', writer: 'you', runs: [], createdAt: Date.now() }); b.drafts.push(d); }
+  const runsMade = buildRuns(t, b, d, models, q.face, q.opts, 'r' + Date.now().toString(36)); d.runs = (d.runs || []).concat(runsMade.map(r => r.id)); saveBuilder(t.slug, b); res.json({ ok: true, draft: d }); });
+/** keep a result: its prompt becomes the theme's prompt for that combination, its model the combination's model */
+app.post('/api/builder/:slug/keep', auth, async (req, res) => { const t = readTheme(slugify(req.params.slug)); const r = runs.get(String((req.body || {}).runId || '')); if (!t || !r || !r.variant || r.status !== 'done') return res.status(404).json({ error: 'pick a finished result with a combination' });
+  const b = readBuilder(t.slug); t.prompts[r.variant] = r.prompt; t.settings[VARIANT_FILES[r.variant][0] + '.model'] = r.model; writeTheme(t.slug, t);
+  b.kept[r.variant] = { runId: r.id, draftId: r.draft || null, foundationId: r.foundationId || t.settings.foundation || null, at: Date.now() }; saveBuilder(t.slug, b);
+  if (!r.star) { r.star = true; saveRun(r); } // kept results survive "Clear"
+  let thumb = false; if (!t.hasThumb) { const f = path.join(RUNS, r.id, 'out.png'); if (await ensureLocal(f)) { await sharp(f).resize(700, 700, { fit: 'inside', withoutEnlargement: true }).png().toFile(path.join(THEMES, t.slug, 'thumb.png')); persist(path.join(THEMES, t.slug, 'thumb.png')); thumb = true; } }
+  res.json({ ok: true, thumb, builder: b, theme: readTheme(t.slug) }); });
+app.post('/api/builder/:slug/unkeep', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); const v = (req.body || {}).variant; if (!t || !VARIANTS.includes(v)) return res.status(404).end(); const b = readBuilder(t.slug); delete b.kept[v]; saveBuilder(t.slug, b); t.prompts[v] = ''; delete t.settings[VARIANT_FILES[v][0] + '.model']; writeTheme(t.slug, t); res.json({ ok: true, builder: b, theme: readTheme(t.slug) }); });
+app.delete('/api/builder/:slug/drafts/:id', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).end(); const b = readBuilder(t.slug); const d = b.drafts.find(x => x.id === req.params.id); if (!d) return res.json({ ok: true });
+  const keptRuns = new Set(Object.values(b.kept).map(k => k.runId)); for (const id of d.runs || []) { if (keptRuns.has(id)) continue; const r = runs.get(id); if (r) { runs.delete(id); fs.rmSync(path.join(RUNS, id), { recursive: true, force: true }); unpersist(path.join(RUNS, id)); } }
+  b.drafts = b.drafts.filter(x => x.id !== d.id); saveBuilder(t.slug, b); res.json({ ok: true }); });
+
 app.get('/api/costs.csv', auth, (req, res) => { const rows = [...runs.values()].filter(r => r.status === 'done').sort((a, b) => a.createdAt - b.createdAt).map(r => [new Date(r.createdAt).toISOString(), r.kind, r.themeName || '', VARIANT_LABELS[r.variant] || '', r.model, r.seconds || '', r.cost != null ? r.cost.toFixed(4) : '']); const esc = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
   const total = rows.reduce((a, r) => a + (+r[6] || 0), 0); res.setHeader('content-type', 'text/csv'); res.setHeader('content-disposition', 'attachment; filename="sketchy-lab-costs.csv"'); res.send(['when,kind,theme,combination,model,seconds,cost_usd', ...rows.map(r => r.map(esc).join(',')), '', `TOTAL,,,,,${rows.length} images,${total.toFixed(4)}`].join('\n')); });
 

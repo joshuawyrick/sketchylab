@@ -4,11 +4,20 @@ A standalone prompt-testing lab for Sketchy Robotics themes. Import theme zips (
 keep a library of reference faces, and run every combination's prompt across many image models at once through
 [OpenRouter](https://openrouter.ai). Keep the winners, export the theme as a zip, import it into the booth.
 
-- **Image lab** — pick a theme, give combinations a face, tick models, run. Results are kept per theme (★ star the keepers;
-  "Clear" leaves starred ones). "Use this prompt" writes a result's prompt back into the theme; "Make thumbnail" sets the tile picture.
-- **Generator studio** — one prompt, one face, any models; a scratchpad for writing prompts.
-- **Themes** — import/export zips, edit prompts in place.
-- **Models & settings** — the live list of image models from OpenRouter (filter, tick defaults), quality/resolution/aspect defaults, cost log CSV.
+- **Theme builder** — pick or start a theme, choose its foundation, audience (family / adult 18+) and head style, and
+  describe it. An AI (your OpenAI account, or any OpenRouter text model) writes each combination's theme section on top of
+  the foundation; every draft is tested on the faces and image models you tick. ★ Keep the winners (the prompt and model
+  are saved into the theme, the first keep becomes the thumbnail), then "Write & test every combination not kept yet" retries
+  only the rest — the AI sees the kept prompts and its previous attempt, plus an optional note per combination. Edit & test a
+  draft by hand, un-keep, test the kept prompts again, import/replace from a zip, and export the finished theme for the booth.
+- **Prompt test** — 1–4 prompts × 1–4 foundations × models × quality levels, all at once, each result labeled; one prompt
+  and one foundation works as a quick scratchpad. Scores, hover zoom and a side-by-side compare strip.
+- **Foundations** — the "how" texts put in front of every prompt, and the refine prompt.
+- **Settings** — keys, the live model list (filter, favorites, hide), likeness judge and default prompt writer, run defaults, cost log CSV.
+
+Exports (`bake=1`) put each combination's foundation in front of its prompt, so the booth draws exactly what was tested,
+and translate model names for the booth (which calls OpenAI directly): `openai-direct/x` and `openai/x` become `x`;
+models the booth can't run are left out of `theme.txt` with a comment.
 
 ## Running on Replit
 
@@ -29,5 +38,6 @@ One folder per theme; inside it one prompt file per combination (`single-male.md
 
 ## Tests
 
-`bash test/run.sh` starts a fake OpenRouter (`test/fakeor.js`) and the server on :3457, then runs `test/lab.py` (Playwright).
+`bash test/run.sh` starts a fake OpenRouter/OpenAI (`test/fakeor.js`) and the server on :3457, then runs the Playwright
+test `test/builder.py`: the Theme builder end to end, the export, and a Prompt test run.
 Nothing in the tests touches the real OpenRouter.
