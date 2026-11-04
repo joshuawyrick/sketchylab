@@ -69,6 +69,19 @@
   #ctx{position:fixed;display:none;background:#fff;border:1px solid #c9d1dd;border-radius:6px;padding:4px;z-index:9;box-shadow:0 6px 20px rgba(0,0,0,.5)}
   #ctx button{display:flex;justify-content:flex-start;width:100%;text-align:left;background:none;border:0;padding:6px 12px;min-height:0}#ctx button:hover{background:#e9eef7}
   @media (max-width:1100px){main{grid-template-columns:280px 1fr 300px}}
+  /* preset test: the Lab's copy of Plotter Studio shows buttons instead of numbers. Hidden controls stay in the page because the drawing code reads them. */
+  [data-hide]{display:none!important}
+  .ptRow{border:1px solid var(--line);border-radius:8px;background:#fff;margin-bottom:6px;padding:6px 8px}
+  .ptRow.on{border-color:var(--acc);box-shadow:0 0 0 2px #006df633}
+  .ptPick{display:block;width:100%;text-align:left;background:none;border:0;padding:2px 0;cursor:pointer;color:var(--txt);font:600 13px var(--font);white-space:normal}
+  .ptPick small{display:block;font-weight:400;font-size:11.5px;color:var(--mut);margin-top:1px}
+  .ptPick .num{color:var(--acc);margin-right:4px}
+  .ptPick .slow{color:#b35c00}
+  .ptMeta{display:flex;align-items:center;gap:4px;margin-top:3px}
+  .ptStar{border:0;background:none;padding:0 1px;font-size:16px;line-height:1;cursor:pointer;color:#c9d1dd}.ptStar.on{color:#e0a800}
+  .ptDel{margin-left:auto;border:0;background:none;color:#8a94a6;font-size:13px;cursor:pointer;padding:2px 6px}.ptDel:hover{color:#d7263d}
+  .ptNote{width:100%;margin-top:5px;border:1px solid #c9d1dd;border-radius:5px;padding:4px 6px;font:12px var(--font)}
+  #ptList.locked .ptPick,#ptList.locked .ptDel{pointer-events:none;opacity:.55}
 </style>
 </head>
 <body>
@@ -96,7 +109,7 @@
     <path d="M343.28 504.5 L341.5 506.99 L339.5 507.8 L262.5 504.35 L183.5 501.57 L67.5 496.76 L65.5 496.41 L64.08 495.5 L63.29 494.5 L62.82 492.5 L62.86 489.5 L63.5 487.86 L65.5 486.23 L67.5 485.9 L109.5 483.83 L220.5 476.28 L230.5 475.93 L263.5 473.39 L332.5 469.39 L340.5 469.53 L342.5 470.88 L343.4 472.5 Z" fill="#006df6"/>
     <path d="M1640.12 474.5 L1640.46 472.5 L1642.5 470.35 L1644.5 470 L1650.5 470.12 L1819.5 480.31 L1872.5 483.86 L1915.5 485.97 L1917.5 486.42 L1918.97 487.5 L1920.02 489.5 L1919.79 493.5 L1919.2 494.5 L1917.5 495.99 L1916.5 496.36 L1890.5 496.98 L1865.5 498.35 L1840.5 499.1 L1749.5 503.01 L1718.5 504.79 L1680.5 506.13 L1650.5 507.86 L1643.5 507.92 L1641.5 506.67 L1640.2 504.5 Z" fill="#006df6"/>
   </g>
-  </svg><span class="sub">Plotter Studio</span><span id="botBadge" class="botBadge" style="display:none">BOT 1</span><select id="botSel" style="display:none;width:auto" title="Which robot this tab controls (one tab per robot)"></select>
+  </svg><span class="sub">Plotter Studio · Preset test</span><span id="botBadge" class="botBadge" style="display:none">BOT 1</span><select id="botSel" style="display:none;width:auto" title="Which robot this tab controls (one tab per robot)"></select>
   <span class="pill" id="fw">not connected</span>
   <span id="blockMsg" style="font-size:12px;color:#ffb4b4"></span><span class="sp"></span>
   <span id="status">no arm connected</span>
@@ -108,13 +121,13 @@
   <aside>
     <div id="serialWarn" class="warn" style="display:none">This browser can't talk to USB devices. Open this page in <b>Google Chrome</b> or <b>Microsoft Edge</b> on a computer (not a phone).</div>
     <section>
-      <h2>1 · Artwork</h2>
+      <h2>1 · Test picture</h2>
       <div class="body">
         <div id="drop"><b>Drop a PNG / JPG / SVG here</b><br>or click to choose a file<input id="file" type="file" accept=".svg,.png,.jpg,.jpeg,.gif,.bmp,.webp,image/*" style="display:none"></div>
         <div class="note" id="fileInfo">No file loaded.</div>
-        <div class="row" style="margin-top:8px"><label>Conversion preset <span class="note">(trace + path rules)</span></label></div>
-        <div class="preset" data-group="conv"><select class="pSel"></select><button class="pSave" title="Save the current trace + path settings under a new name">Save as…</button><button class="pUpd" title="Overwrite the selected saved preset with the values on screen">Update</button><button class="pDef" title="Load this preset automatically when the page opens">★ Default</button><button class="pDel" title="Delete this saved preset">Delete</button></div>
-        <div id="imgOpts" style="display:none">
+        <div class="row" data-hide style="margin-top:8px"><label>Conversion preset <span class="note">(trace + path rules)</span></label></div>
+        <div class="preset" data-hide data-group="conv"><select class="pSel"></select><button class="pSave" title="Save the current trace + path settings under a new name">Save as…</button><button class="pUpd" title="Overwrite the selected saved preset with the values on screen">Update</button><button class="pDef" title="Load this preset automatically when the page opens">★ Default</button><button class="pDel" title="Delete this saved preset">Delete</button></div>
+        <div id="imgOpts" data-hide style="display:none">
           <div class="row"><label>Trace mode</label><select id="imgMode"><option value="ink">Line art</option><option value="edge">Edges (photos)</option></select></div>
           <div class="row"><label>Threshold <span id="thrV">187</span></label><input id="imgThr" type="range" min="1" max="254" value="187"></div>
           <div class="row"><label>Invert (white on black)</label><input id="imgInv" type="checkbox"></div>
@@ -137,14 +150,24 @@
           <option value="215.9x279.4">8.5 × 11 in (Letter)</option><option value="203.2x254">8 × 10 in</option><option value="152.4x203.2">6 × 8 in</option>
           <option value="127x177.8">5 × 7 in</option><option value="101.6x152.4">4 × 6 in</option><option value="210x297">A4</option><option value="148x210">A5</option><option value="279.4x431.8">11 × 17 in</option></select></div>
         <div class="row"><label>Orientation</label><select id="orient"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></div>
-        <div class="row"><label>Edge buffer</label><input id="margin" type="number" value="0.5" step="0.25" min="0"><span class="unit">in</span></div>
-        <div class="row"><label>Paper center X</label><input id="paperX" type="number" value="0" step="1"><span class="unit">mm</span></div>
-        <div class="row"><label>Paper center Y</label><input id="paperY" type="number" value="270" step="1"><span class="unit">mm</span></div>
+        <div class="row" data-hide><label>Edge buffer</label><input id="margin" type="number" value="0.5" step="0.25" min="0"><span class="unit">in</span></div>
+        <div class="row" data-hide><label>Paper center X</label><input id="paperX" type="number" value="0" step="1"><span class="unit">mm</span></div>
+        <div class="row" data-hide><label>Paper center Y</label><input id="paperY" type="number" value="270" step="1"><span class="unit">mm</span></div>
         <div class="btns"><button id="btnPaperHere" title="Jog the pen over the exact center of your sheet, then click">Set paper center = pen is here</button><button id="btnTracePaper" title="Flies the lifted pen around the paper's edge buffer so you can check alignment">Trace paper edge (pen up)</button></div>
         <div class="note">The drawing can never go outside the dashed buffer line.</div>
       </div>
     </section>
-    <section>
+    <section id="ptSection">
+      <h2>3 · Presets <span class="note" style="margin-left:auto" id="ptCount"></span></h2>
+      <div class="body">
+        <div id="ptLogin" style="display:none"><div class="note" style="margin-bottom:6px">Enter your Sketchy Lab password to load the presets.</div><input id="ptPw" type="password" placeholder="password" style="width:100%;margin-bottom:6px"><div class="btns"><button id="ptGo" class="primary">Sign in</button></div><div class="note" id="ptLoginErr" style="color:#b51f33"></div></div>
+        <div id="ptList"></div>
+        <div class="note" id="ptMsg" style="margin-top:6px"></div>
+        <div class="btns" style="margin-top:8px"><button id="ptCopy" title="Copies every rating, note, time and setting so you can paste them to Claude">Copy results for Claude</button><button id="ptAddBtn" title="Paste a new batch of presets from Claude">Add new presets</button></div>
+        <div id="ptBox" style="display:none;margin-top:8px"><div class="note" id="ptBoxNote" style="margin-bottom:4px"></div><textarea id="ptText" rows="6" style="width:100%;font:12px var(--mono);border:1px solid #c9d1dd;border-radius:5px;padding:6px"></textarea><div class="btns" style="margin-top:6px"><button id="ptAddGo" class="primary">Add these presets</button><button id="ptBoxClose">Close</button></div></div>
+      </div>
+    </section>
+    <section data-hide>
       <h2>3 · Drawing <span class="note" style="margin-left:auto" id="objLabel"></span></h2>
       <div class="body">
         <div class="row"><label>Width</label><input id="szW" type="number" value="150" step="1"><span class="unit">mm</span></div>
@@ -158,7 +181,7 @@
         <div class="note">On the preview: click to select · drag to move · drag a corner to resize · right-click or Delete key to remove. Drop more files to add more drawings.</div>
       </div>
     </section>
-    <section>
+    <section data-hide>
       <h2>4 · Path optimization</h2>
       <div class="body">
         <div class="row"><label>Reorder for shortest travel</label><input id="optOrder" type="checkbox" checked></div>
@@ -179,7 +202,7 @@
       </div>
       </div>
     </section>
-    <section>
+    <section data-hide>
       <h2>5 · Speed <span class="note" style="margin-left:auto">no caps</span></h2>
       <div class="body">
         <div class="preset" data-group="speed"><select class="pSel"></select><button class="pSave" title="Save the current values under a new name">Save as…</button><button class="pUpd" title="Overwrite the selected saved preset with the values on screen">Update</button><button class="pDef" title="Load this preset automatically when the page opens">★ Default</button><button class="pDel" title="Delete this saved preset">Delete</button></div>
@@ -195,7 +218,7 @@
         <div class="note">Firmware ceiling is 18,000 mm/min and 3,000 mm/s². Rotrics ships at 60 mm/s² — that's the main reason it feels slow.</div>
       </div>
     </section>
-    <section>
+    <section data-hide>
       <h2>6 · Pen heights</h2>
       <div class="body">
         <div class="row"><label>Pen-down Z</label><input id="zDown" type="number" value="0" step="0.5"><span class="unit">mm</span></div>
@@ -210,13 +233,13 @@
   <div class="stage">
     <canvas id="cv"></canvas>
     <div id="stats">no artwork</div>
-    <div id="ctx"><button data-a="fit">Fit to page</button><button data-a="center">Center on page</button><button data-a="dup">Duplicate</button><button data-a="del">Delete</button></div>
+    <div id="ctx"><button data-a="fit">Fit to page</button><button data-a="center">Center on page</button><button data-a="dup" data-hide>Duplicate</button><button data-a="del">Delete</button></div>
     <div id="hint">black = exactly what the pen draws (real width) · orange = traced but left out · red dashes = travel · blue ring = arm reach · grey = paper, dashed = edge buffer · scroll to zoom, drag empty space to pan, double-click to re-center</div>
   </div>
 
   <!-- RIGHT: machine -->
   <aside class="right">
-    <section>
+    <section data-hide>
       <h2>Event queue <span class="note" id="qSum" style="margin-left:auto"></span></h2>
       <div class="body">
         <div id="opLogin" style="display:none;border:2px solid var(--acc);border-radius:10px;padding:10px;margin-bottom:8px;background:#eaf2ff"><b>Sign in to run the event queue</b><div class="note" style="margin:4px 0 8px">Use the operator name and password the admin gave you.</div><input id="opName" placeholder="name" style="width:100%;margin-bottom:6px"><input id="opPw" type="password" placeholder="password" style="width:100%;margin-bottom:8px"><div class="btns"><button id="opGo" class="primary">Sign in</button></div><div class="note" id="opErr" style="color:#b51f33"></div></div>
@@ -240,10 +263,10 @@
     <section>
       <h2>Plot</h2>
       <div class="body">
-        <div class="btns"><button id="btnGen" class="primary">Generate G-code</button><button id="btnDl">Download .gcode</button></div>
+        <div class="btns" data-hide><button id="btnGen" class="primary">Generate G-code</button><button id="btnDl">Download .gcode</button></div>
         <div class="btns"><button id="btnStart" class="primary" disabled>▶ Start drawing</button><button id="btnPause" disabled>⏸ Pause</button><button id="btnStop" class="danger" disabled>■ Stop</button></div>
         <div id="prog"><div></div></div>
-        <div class="note" id="progTxt">Load artwork, connect the arm, press Home, set pen-down Z, then Start.</div>
+        <div class="note" id="progTxt">Load the picture, pick a preset, connect the arm, press Home, set the pen height, then Start.</div>
         <div class="btns"><button id="btnFrame" title="Moves the pen (lifted) around the drawing's bounding box so you can check placement">Trace drawing outline (pen up)</button></div>
       </div>
     </section>
@@ -258,11 +281,11 @@
           <button data-j="-1,0,0">← <span class="k">X−</span></button><button data-j="1,0,0"><span class="k">X+</span> →</button><button data-j="0,0,-1"><span class="k">Z−</span> ▼ down</button>
           <button data-j="0,-1,0"><span class="k">Y−</span> ↓</button><button id="btnGoCenter" title="Move the lifted pen over the paper center">Go to paper</button><button id="btnEstop" class="danger" title="M410 quick stop — you must Home again afterwards">STOP</button>
         </div>
-        <div class="row"><label>Jog speed</label><input id="jogSpeed" type="number" value="6000" step="500"><span class="unit">mm/min</span></div>
+        <div class="row" data-hide><label>Jog speed</label><input id="jogSpeed" type="number" value="6000" step="500"><span class="unit">mm/min</span></div>
         <div class="row"><label>Saved pen-down Z: <b id="zDownShow">0</b> mm</label><button id="btnPenTest" title="Moves to the saved pen-down height, pauses, lifts — a dry run of one pen stroke">Test pen tap</button></div>
       </div>
     </section>
-    <section>
+    <section class="closed">
       <h2>Console</h2>
       <div class="body">
         <div id="console"></div>
@@ -1230,6 +1253,7 @@ window.DEXARM_PEN_OFFSET=114;
   let nextId = 1;
 
   // ---------- persistence ----------
+  const PT = { sel: null, busy: false, list: [], picture: '', est: {} }; // preset test state (see the preset test section near the end)
   const PERSIST = ['imgMode', 'imgThr', 'imgInv', 'imgRes', 'imgSpeck', 'imgPrune', 'imgSmooth', 'imgBlur', 'paper', 'orient', 'margin', 'paperX', 'paperY',
     'optOrder', 'optJoin', 'optSeg', 'optTurn', 'optSimp', 'optMin', 'optMinDetail', 'optSimpDetail', 'zoneSpeed', 'imgDots', 'penW', 'fillX', 'spDraw', 'spTravel', 'spZ', 'acc', 'accT', 'jerk', 'fastTravel', 'inflight', 'zDown', 'zLift', 'zSafe', 'jogStep', 'jogSpeed', 'qPause', 'qPreview', 'qPreviewSecs', 'qSize', 'qSizeCustom', 'qPlace', 'qNames', 'qNamePos', 'qNameFont', 'qNameH', 'zoneAuto', 'zoneDepth', 'showDropped', 'showSrc'];
   // ---- which robot is this tab? (one Studio tab per arm; /studio/?bot=3 or the header dropdown) ----
@@ -1292,6 +1316,8 @@ window.DEXARM_PEN_OFFSET=114;
   async function loadFromUrl(url, name) { const b = await fetch(url).then(r => { if (!r.ok) throw new Error('fetch ' + r.status); return r.blob(); }); const f = new File([b], name || 'queue.png', { type: b.type || 'image/png' }); f.fromQueue = true; for (const o of S.objects.slice()) deleteObj(o); await loadFile(f); }
   async function loadFile(f) {
     const name = f.name || 'pasted';
+    for (const o of S.objects.slice()) deleteObj(o); // one test picture at a time, so every preset draws the same thing
+    PT.picture = name; PT.est = {}; ptSavePicture(f);
     if (!f.fromQueue) S.nextProportions = /big\s*-?\s*head/i.test(name) ? 'bighead' : 'normal'; // queue jobs say which (from the theme)
     let obj;
     if (/\.svg$/i.test(name) || f.type === 'image/svg+xml') {
@@ -1606,8 +1632,9 @@ window.DEXARM_PEN_OFFSET=114;
     return out.concat(lines.slice(from)).join('\n');
   }
   async function runDrawing(resume) { // resume = { gcode, line, total, ... } to continue an interrupted drawing
+    if (!resume && !S.gcode) generate(); // before reading it: changing a setting clears the G-code, and an empty program "finishes" instantly without drawing
     const program = resume ? resumeProgram(resume.gcode, resume.line) : S.gcode;
-    if (!resume && !S.gcode) generate(); if ((!resume && !S.gcode) || !link.connected) { if (S.block) log(S.block, 'err'); return false; }
+    if ((!resume && !S.gcode) || !link.connected) { if (S.block) log(S.block, 'err'); return false; }
     S.running = true; S.paused = false; S.stopFlag = false; updateButtons();
     const t0 = performance.now(); let ok = false; const o = gcodeOpts(); let lastSave = 0;
     const base = resume ? resume : { gcode: S.gcode, total: S.gcode.split('\n').length, job: Q.current ? { id: Q.current.id, number: Q.current.number, themeName: Q.current.themeName } : null, name: (S.objects[0] || {}).name || '', secondsBefore: 0 };
@@ -1637,13 +1664,14 @@ window.DEXARM_PEN_OFFSET=114;
     $('btnResumeNo').onclick = () => { clearCheckpoint(); box.style.display = 'none'; qRefresh(); };
     if (Q.resume || Q.on) { log('auto-run was on — resuming the interrupted drawing by itself in 3 s (press Start over to stop that)'); const t = setTimeout(() => { if (box.style.display !== 'none') $('btnResume').click(); }, 3000); $('btnResumeNo').addEventListener('click', () => clearTimeout(t)); }
   }
-  $('btnStart').addEventListener('click', () => runDrawing());
+  $('btnStart').addEventListener('click', async () => { const n = PT.sel, est = S.plan ? Planner.estimateSeconds(S.plan, gcodeOpts()) : 0, plan = S.plan; const ok = await runDrawing(); if (ok && n) ptRecordRun(n, est, plan); });
   $('btnPause').addEventListener('click', () => { S.paused = !S.paused; $('btnPause').textContent = S.paused ? '▶ Resume' : '⏸ Pause'; log(S.paused ? 'paused (finishing buffered moves)' : 'resumed'); });
   $('btnStop').addEventListener('click', () => { S.stopFlag = true; });
   function updateButtons() {
     const have = !!S.plan && S.plan.strokes.length > 0 && !S.planDirty, ok = have && !S.block;
     $('btnGen').disabled = !ok; $('btnDl').disabled = !ok; $('btnFrame').disabled = !ok || !link.connected || S.running;
-    $('btnStart').disabled = !ok || !link.connected || S.running || S.needsHome;
+    $('btnStart').disabled = !ok || !link.connected || S.running || S.needsHome || PT.busy || !PT.sel;
+    $('ptList').classList.toggle('locked', S.running || PT.busy);
     $('btnStart').title = S.needsHome ? 'STOP was used — press ⌂ Home first' : '';
     $('btnPause').disabled = !S.running; $('btnStop').disabled = !S.running;
     $('blockMsg').textContent = S.needsHome && link.connected ? '⚠ STOP was used — press ⌂ Home before drawing' : S.block ? '⚠ ' + S.block : '';
@@ -1795,7 +1823,6 @@ window.DEXARM_PEN_OFFSET=114;
   $('opGo').addEventListener('click', async () => { $('opErr').textContent = ''; try { const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: $('opName').value.trim(), password: $('opPw').value }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'wrong name or password'); localStorage.setItem('sr.op', d.token); $('opPw').value = ''; showOpLogin(false); whoAmI(); qRefresh(); } catch (e) { $('opErr').textContent = e.message; } });
   $('opPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('opGo').click(); });
   async function whoAmI() { try { const me = await qFetch('/api/me'); $('opWho').style.display = ''; $('opWho').innerHTML = `signed in as <b>${me.name}</b> (${me.role}) · <a href="#" id="opOut">sign out</a>`; $('opOut').onclick = async e => { e.preventDefault(); await fetch('/api/logout', { method: 'POST', headers: { 'x-admin-token': opToken() } }).catch(() => {}); localStorage.removeItem('sr.op'); showOpLogin(true); }; } catch (_) {} }
-  whoAmI();
   async function qStatus(id, status, error, extra) { // report a job's outcome; retries so a network hiccup can't leave it stuck in "drawing"
     for (let i = 0; i < 5; i++) { try { return await qFetch('/api/jobs/' + id + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status, error: error || '' }, extra || {})) }); } catch (e) { if (i === 4) throw e; await new Promise(r => setTimeout(r, 1500)); } }
   }
@@ -1920,7 +1947,7 @@ window.DEXARM_PEN_OFFSET=114;
   $('btnQSkipCur').addEventListener('click', () => { Q.cancelPreview = true; if (S.running) S.stopFlag = true; else if (Q.loaded) qSkipLoaded(); });
   // auto-run survives a page reload: it resumes as soon as the arm has reconnected
   Q.resume = localStorage.getItem(K('dexdraw.autoRun')) === '1';
-  syncQ(); qRefresh(); Q.timer = setInterval(qRefresh, 4000);
+  syncQ(); // the Lab has no event queue, so nothing polls for one
 
   // ---------- hover help ----------
   const TIPS = {
@@ -1969,7 +1996,103 @@ window.DEXARM_PEN_OFFSET=114;
     rot: 'Rotates the drawing in 90° steps.', mirror: 'Flips the drawing left-right.'
   };
   for (const id in TIPS) { const e = $(id); if (!e) continue; e.title = TIPS[id]; const lab = e.closest('.row') && e.closest('.row').querySelector('label'); if (lab) lab.title = TIPS[id]; }
+  // ---------- preset test: one picture, numbered presets, ratings, and a memory of the deleted ones ----------
+  const PT_FIXED = { imgMode: 'ink', imgInv: false, imgBlur: false, optOrder: true, fastTravel: false, inflight: 4 }; // the same for every preset
+  const ptToken = () => { try { return localStorage.getItem('lab.studio.token') || ''; } catch (_) { return ''; } };
+  const ptClock = sec => { const t = Math.round(sec); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+  async function ptApi(url, opts) {
+    opts = opts || {}; const headers = { 'x-admin-token': ptToken() };
+    if (opts.json !== undefined) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
+    const r = await fetch(url, { method: opts.method || 'GET', headers, body: opts.body });
+    if (r.status === 401) { $('ptLogin').style.display = ''; throw new Error('sign in'); }
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'server error ' + r.status); return d;
+  }
+  const ptMsg = (text, bad) => { $('ptMsg').textContent = text; $('ptMsg').style.color = bad ? '#b51f33' : ''; };
+  function ptSetFields(vals) { for (const id in vals) { const e = $(id); if (!e) continue; if (e.type === 'checkbox') e.checked = !!vals[id]; else e.value = vals[id]; } }
+  function ptRender() {
+    const live = PT.list.filter(p => !p.deleted), gone = PT.list.length - live.length;
+    $('ptCount').textContent = live.length + ' to test';
+    const box = $('ptList'); box.innerHTML = '';
+    if (!live.length) box.innerHTML = '<div class="note">No presets left. Ask Claude for more, then use Add new presets.</div>';
+    for (const p of live) {
+      const row = document.createElement('div'); row.className = 'ptRow' + (p.n === PT.sel ? ' on' : '');
+      const pick = document.createElement('button'); pick.className = 'ptPick';
+      const num = document.createElement('span'); num.className = 'num'; num.textContent = '#' + p.n; pick.append(num, p.name);
+      const blurb = document.createElement('small'); blurb.textContent = p.blurb; pick.append(blurb);
+      const last = (p.runs || [])[(p.runs || []).length - 1], est = PT.est[p.n];
+      if (last || est != null) { const t = document.createElement('small'); if (est != null) { const e = document.createElement('span'); e.textContent = 'about ' + ptClock(est) + (est > 180 ? ' (over 3 min)' : ''); if (est > 180) e.className = 'slow'; t.append(e); } if (last) t.append((est != null ? ' · ' : '') + 'last drawn in ' + ptClock(last.seconds)); pick.append(t); }
+      pick.onclick = () => ptApply(p);
+      const meta = document.createElement('div'); meta.className = 'ptMeta';
+      for (let i = 1; i <= 5; i++) { const st = document.createElement('button'); st.className = 'ptStar' + (i <= p.rating ? ' on' : ''); st.textContent = '★'; st.title = i + ' of 5'; st.onclick = () => ptPatch(p, { rating: p.rating === i ? 0 : i }); meta.append(st); }
+      const del = document.createElement('button'); del.className = 'ptDel'; del.textContent = '✕ Delete'; del.onclick = () => ptDelete(p); meta.append(del);
+      row.append(pick, meta);
+      if (p.n === PT.sel) { const note = document.createElement('input'); note.className = 'ptNote'; note.placeholder = 'Notes (optional): wobbly eyes, great hair…'; note.value = p.note || ''; note.onchange = () => ptPatch(p, { note: note.value }, true); row.append(note); }
+      box.append(row);
+    }
+    if (gone) { const n = document.createElement('div'); n.className = 'note'; n.textContent = gone + ' deleted. Their settings are remembered and can\'t be added again.'; box.append(n); }
+    updateButtons();
+  }
+  async function ptPatch(p, change, quiet) { try { Object.assign(p, await ptApi('/api/plotter-test/' + p.n, { method: 'PATCH', json: change })); if (!quiet) ptRender(); } catch (e) { ptMsg('Could not save that: ' + e.message, true); } }
+  async function ptDelete(p) {
+    if (!confirm(`Delete #${p.n} ${p.name}? Its settings stay on the do-not-repeat list.`)) return;
+    await ptPatch(p, { deleted: true }); if (PT.sel === p.n && p.deleted) { PT.sel = null; try { localStorage.removeItem('lab.studio.sel'); } catch (_) {} ptRender(); ptMsg('Preset deleted. Pick another one.'); }
+  }
+  async function ptApply(p, opts) {
+    if (S.running || PT.busy) return;
+    PT.busy = true; PT.sel = p.n; try { localStorage.setItem('lab.studio.sel', p.n); } catch (_) {}
+    $('progTxt').textContent = `Ready to draw #${p.n}.`; $('prog').firstElementChild.style.width = '0';
+    ptRender(); ptSetFields(PT_FIXED); ptSetFields(p.speed); ptSetFields(p.conv); $('thrV').textContent = $('imgThr').value; saveSettings(); S.gcode = '';
+    const images = S.objects.filter(o => o.kind === 'image');
+    if (images.length && !(opts && opts.noTrace)) {
+      ptMsg(`Setting up #${p.n}…`);
+      await Promise.race([Promise.all(images.map(retrace)), new Promise(r => setTimeout(r, 90000))]);
+    }
+    if (S.objects.length) { refresh(); for (let i = 0; i < 300 && S.planDirty; i++) await new Promise(r => setTimeout(r, 50)); }
+    PT.busy = false;
+    if (S.plan && S.plan.strokes.length) { PT.est[p.n] = Planner.estimateSeconds(S.plan, gcodeOpts()); ptMsg(`#${p.n} ${p.name} is ready.`); } else ptMsg(`#${p.n} ${p.name} is selected. Load the test picture next.`);
+    ptRender();
+  }
+  async function ptRecordRun(n, est, plan) {
+    const p = PT.list.find(x => x.n === n); if (!p) return; const sec = S.lastDrawSeconds || 0;
+    ptMsg(`#${n} finished in ${ptClock(sec)}. Write "${n}" on this sheet, rate it, then put in fresh paper.`);
+    $('progTxt').textContent = `Done: write "${n}" on this sheet.`;
+    try { Object.assign(p, await ptApi(`/api/plotter-test/${n}/run`, { method: 'POST', json: { seconds: sec, estSeconds: est, strokes: plan ? plan.strokes.length : 0, inkMm: plan ? plan.ink : 0, picture: PT.picture } })); } catch (e) { ptMsg(`#${n} finished in ${ptClock(sec)}, but the time couldn't be saved: ${e.message}`, true); }
+    ptRender();
+  }
+  // the test picture stays in this browser, so it is still here after a reload
+  function ptDb() { return new Promise((res, rej) => { const q = indexedDB.open('sketchy-preset-test', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+  async function ptSavePicture(f) { try { const db = await ptDb(); db.transaction('kv', 'readwrite').objectStore('kv').put({ blob: f, name: f.name || 'picture.png', type: f.type }, 'picture'); } catch (_) {} }
+  async function ptLoadPicture() { try { const db = await ptDb(); const v = await new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get('picture'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); return v ? new File([v.blob], v.name, { type: v.type }) : null; } catch (_) { return null; } }
+  function ptResults() {
+    const view = p => ({ n: p.n, name: p.name, rating: p.rating, note: p.note || '', runs: (p.runs || []).map(r => ({ seconds: r.seconds, estSeconds: r.estSeconds, strokes: r.strokes, picture: r.picture })), speed: p.speed, conv: p.conv });
+    return JSON.stringify({ sketchyLabPresetResults: 1, picture: PT.picture, penWidthMm: num('penW'), kept: PT.list.filter(p => !p.deleted).map(view), deleted: PT.list.filter(p => p.deleted).map(view) }, null, 1);
+  }
+  function ptShowBox(note, text, adding) { $('ptBox').style.display = ''; $('ptBoxNote').textContent = note; $('ptText').value = text; $('ptAddGo').style.display = adding ? '' : 'none'; $('ptText').focus(); if (text) $('ptText').select(); }
+  $('ptCopy').onclick = async () => { const text = ptResults(); try { await navigator.clipboard.writeText(text); $('ptBox').style.display = 'none'; ptMsg('Results copied. Paste them into your chat with Claude.'); } catch (_) { ptShowBox('Copy all of this, then paste it into your chat with Claude:', text, false); } };
+  $('ptAddBtn').onclick = () => ptShowBox('Paste the new presets from Claude here:', '', true);
+  $('ptBoxClose').onclick = () => { $('ptBox').style.display = 'none'; };
+  $('ptAddGo').onclick = async () => {
+    let parsed; try { parsed = JSON.parse($('ptText').value); } catch (_) { ptMsg('That text is not a complete preset list. Copy the whole block from Claude and try again.', true); return; }
+    try {
+      const r = await ptApi('/api/plotter-test/presets', { method: 'POST', json: Array.isArray(parsed) ? { presets: parsed } : parsed }); PT.list = r.state.presets; $('ptBox').style.display = 'none'; ptRender();
+      ptMsg(`Added ${r.added.length} new preset${r.added.length === 1 ? '' : 's'}.` + (r.refused.length ? ` Refused because they were already tried: ${r.refused.join(', ')}.` : ''));
+    } catch (e) { ptMsg(e.message, true); }
+  };
+  async function ptGo() { const pw = $('ptPw').value; try { const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }); const d = await r.json(); if (!r.ok) throw new Error(); localStorage.setItem('lab.studio.token', d.token); $('ptPw').value = ''; $('ptLoginErr').textContent = ''; $('ptLogin').style.display = 'none'; ptStart(); } catch (_) { $('ptLoginErr').textContent = 'Wrong password'; } }
+  $('ptGo').onclick = ptGo; $('ptPw').addEventListener('keydown', e => { if (e.key === 'Enter') ptGo(); });
+  for (const id of ['paper', 'orient']) $(id).addEventListener('change', () => { $('btnFit').click(); }); // the drawing always fills the chosen sheet
+  document.querySelectorAll('section>h2').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('closed')));
+  async function ptStart() {
+    try { PT.list = (await ptApi('/api/plotter-test')).presets; } catch (e) { if (e.message !== 'sign in') ptMsg('Could not load the presets: ' + e.message, true); return; }
+    let saved = null; try { saved = +localStorage.getItem('lab.studio.sel') || null; } catch (_) {}
+    const p = PT.list.find(x => x.n === saved && !x.deleted);
+    if (p) { PT.sel = p.n; ptSetFields(PT_FIXED); ptSetFields(p.speed); ptSetFields(p.conv); $('thrV').textContent = $('imgThr').value; saveSettings(); }
+    ptRender();
+    if (!S.objects.length) { const f = await ptLoadPicture(); if (f) { await loadFile(f); ptMsg(p ? `Picture restored. #${p.n} ${p.name} is selected.` : 'Picture restored. Pick a preset.'); } else ptMsg('Drop your test picture above, then pick a preset.'); }
+  }
+
   resize(); fitView(); syncPanel(); updateButtons();
+  ptStart();
   $('thrV').textContent = $('imgThr').value;
 })();
 

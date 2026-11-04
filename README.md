@@ -9,7 +9,7 @@ keep a library of reference faces, and run every combination's prompt across man
 - **Generator studio** — one prompt, one face, any models; a scratchpad for writing prompts.
 - **Themes** — import/export zips, edit prompts in place.
 - **Models & settings** — the live list of image models from OpenRouter (filter, tick defaults), quality/resolution/aspect defaults, cost log CSV.
-- **Plotter Studio** (`/studio/`) — an unmodified copy of the booth's `public/studio/index.html` for test-drawing on a DexArm (Chrome + USB). The Lab has no event queue, so that panel says the queue server isn't reachable; everything else works on its own.
+- **Plotter Studio** (`/studio/`) — a preset test version of the booth's Plotter Studio for a DexArm (Chrome + USB). The speed and drawing settings are hidden: pick a numbered preset, draw, rate it, delete the losers. "Copy results for Claude" exports everything, and "Add new presets" takes a new batch. Deleted presets stay on record, and settings already tried can't be added again. The starting 10 are in `server/plotter-presets.json`.
 
 ## Running on Replit
 
