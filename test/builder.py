@@ -15,15 +15,17 @@ async def until(pg, js, secs=40):
 async def main():
     async with async_playwright() as p:
         br = await p.chromium.launch(); pg = await (await br.new_context(viewport={'width': 1400, 'height': 1100})).new_page(); errs = []
-        pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('dialog', lambda d: asyncio.ensure_future(d.accept(d.default_value or 'Space Pirates') if d.type == 'prompt' else d.accept()))
+        pg.on('pageerror', lambda e: errs.append(str(e))); ANS = ['Space Pirates']; pg.on('dialog', lambda d: asyncio.ensure_future(d.accept(ANS[0]) if d.type == 'prompt' else d.accept()))
         await pg.goto(B + '/'); await pg.fill('#pw', 'pw'); await pg.click('#loginBtn'); await pg.wait_for_timeout(1500)
         print('tabs:', [await b.text_content() for b in await pg.query_selector_all('#nav button[data-t]')])
         # foundation text so prompts get one
-        await pg.click('#nav [data-t=found]'); await pg.fill('#fList .prompt[data-i="0"] .fText', 'SIMPLE FACE RULES: realistic line art, single line thickness.'); await pg.click('#fSave'); await pg.wait_for_timeout(700)
         await pg.click('#nav [data-t=build]'); await pg.wait_for_timeout(300)
         print('empty state shown:', await pg.is_visible('#bdNone'))
         await pg.click('#newTheme'); await pg.wait_for_timeout(1200)
         print('theme selected:', await pg.input_value('#bdTheme'), '| body shown:', await pg.is_visible('#bdBody'))
+        print('foundation box shows:', await pg.input_value('#bdFound'), '| editable:', await pg.is_enabled('#bdFoundText'))
+        await pg.fill('#bdFoundText', 'SIMPLE FACE RULES: realistic line art, single line thickness.')  # not saved by hand: Generate must save it
+        print('buttons:', (await pg.text_content('#bdWriteAll')).strip(), '|', (await pg.text_content('#bdGrid [data-write="1-male"]')).strip())
         await pg.fill('#bdDesc', 'Space pirates: captain coat over a flight suit, ray-gun holster, robot parrot.'); await pg.dispatch_event('#bdDesc', 'change'); await pg.wait_for_timeout(400)
         await pg.click('#bdRating button[data-v=adult]'); await pg.wait_for_timeout(300)
         await pg.set_input_files('#faceIn', [FACE]); await pg.wait_for_timeout(1500)
@@ -36,6 +38,8 @@ async def main():
         ok = await until(pg, "() => document.querySelectorAll('#bdGrid .draft .dp').length >= 8 && !document.querySelector('#bdGrid .draft .spin')")
         b = api('/api/builder/space-pirates')['builder']
         print('drafts written:', ok, len(b['drafts']), '| statuses:', sorted(set(d['status'] for d in b['drafts'])), '| sample:', b['drafts'][0]['prompt'][:70])
+        print('foundation saved by Generate:', [f['text'][:17] for f in api('/api/state')['settings']['foundations'] if f['id'] == 'normal'])
+        print('row button now:', (await pg.text_content('#bdGrid [data-write="1-male"]')).strip())
         print('markdown stripped:', not any('##' in d['prompt'] or '**' in d['prompt'] for d in b['drafts']))
         await until(pg, "() => document.querySelectorAll('#bdGrid .lab img').length >= 8 && !document.querySelector('#bdGrid .lab .wait')", 60)
         runs = [r for r in api('/api/runs')['runs'] if r['kind'] == 'build']
@@ -54,6 +58,13 @@ async def main():
         print('retry wrote', len(new), 'drafts for', sorted(set(d['variant'] for d in new)), '(kept ones skipped) | note used:', any('parrot bigger' in d['prompt'] for d in new if d['variant'] == 'pet-female'))
         # writer must have seen the kept prompts + previous attempt (check the fake log)
         log = open('test/fakeor.log').read(); print('writer calls in log:', log.count('openai write'))
+        # regenerate one row only
+        n1 = len(api('/api/builder/space-pirates')['builder']['drafts']); await pg.click('#bdGrid [data-write="1-female"]'); await pg.wait_for_timeout(600); await until(pg, "() => !document.querySelector('#bdGrid .draft .spin')")
+        nd = api('/api/builder/space-pirates')['builder']['drafts'][n1:]; print('regenerate single female wrote:', [d['variant'] for d in nd])
+        # save as a new foundation from the builder
+        await pg.fill('#bdFoundText', 'BIG HEAD RULES: oversized head.'); ANS[0] = 'Big head v2'; await pg.click('#bdFoundNew'); await pg.wait_for_timeout(1000)
+        st = api('/api/state'); print('new foundation:', [f['name'] for f in st['settings']['foundations']], '| theme now uses:', [t['settings'].get('foundation') for t in st['themes'] if t['slug'] == 'space-pirates'], '| normal unchanged:', [f['text'][:17] for f in st['settings']['foundations'] if f['id'] == 'normal'])
+        await pg.select_option('#bdFound', 'normal'); await pg.wait_for_timeout(600)
         # edit & test a draft
         d = [x for x in new if x['variant'] == '2-male-female'][0]
         await pg.click(f'#bdGrid [data-dedit="{d["id"]}"]'); await pg.wait_for_timeout(200)
