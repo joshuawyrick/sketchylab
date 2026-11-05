@@ -83,6 +83,7 @@
         <select id="bdRes" style="width:auto"><option value="">resolution: default</option><option value="1K">1K</option><option value="1.5K">1.5K</option><option value="2K">2K</option></select>
         <select id="bdAspect" style="width:auto"><option value="">aspect: default</option><option value="2:3">2:3 (portrait, booth)</option><option value="3:4">3:4</option><option value="1:1">1:1</option></select></div>
       <div class="row"><label></label><button class="primary" id="bdWriteAll" title="Writes a new prompt for every combination you haven't kept yet, then tests each one">✍ Generate all prompts</button><span class="note">skips the ones you've ★ kept</span><button id="bdTestKept" title="Run the kept prompts again on these faces and models">Test the kept prompts again</button><span class="note" id="bdMsg"></span><button class="sm" id="bdJudge" style="margin-left:auto" title="Score every unscored result shown">Score all shown</button><label class="note" style="display:flex;gap:4px;align-items:center;min-width:0"><input type="checkbox" id="bdAllDrafts"> show every draft</label></div>
+      <div class="row" style="justify-content:flex-end;margin-top:0"><button class="danger sm" id="bdClear" title="Delete every draft prompt and every generated image of this theme">🗑 Clear all prompts &amp; images</button><label class="note" style="display:flex;gap:4px;align-items:center;min-width:0"><input type="checkbox" id="bdClearKept"> including the ★ kept prompts</label></div>
       <div id="bdGrid"></div>
       <div id="bdCmp" class="cmp"></div>
     </div>
@@ -233,6 +234,9 @@
     const faces = {}; for (const v of STATE.variantOrder) if (LT.slots[v] && t.prompts[v].trim()) faces[v] = LT.slots[v]; if (!Object.keys(faces).length) return toast('Give the kept combinations a face first', 'bad');
     try { const r = await api('/api/test/theme', { method: 'POST', json: { theme: t.slug, faces, models, opts: bdOpts() } }); $('bdMsg').textContent = `${r.runs.length} test${r.runs.length === 1 ? '' : 's'} of the kept prompts running`; loadRuns(); } catch (e) { toast(e.message, 'bad'); } };
   $('bdAllDrafts').onchange = () => renderBuilder();
+  $('bdClear').onclick = async () => { const t = curTheme(); if (!t) return; const all = $('bdClearKept').checked; const nk = STATE.variantOrder.filter(v => (t.prompts[v] || '').trim()).length;
+    if (!confirm(all ? `Delete EVERYTHING on this page for "${t.name}": all draft prompts, all generated images and all ${nk} kept prompt${nk === 1 ? '' : 's'}?\n\nThe theme, its description and its foundation stay. This can't be undone.` : `Delete all draft prompts and generated images for "${t.name}"?\n\nYour ${nk} ★ kept prompt${nk === 1 ? '' : 's'} and their pictures stay. This can't be undone.`)) return;
+    try { const r = await api('/api/builder/' + t.slug + '/clear', { method: 'POST', json: { all } }); $('bdClearKept').checked = false; BD.open.clear(); BD.editing.clear(); toast(`Cleared ${r.drafts} draft${r.drafts === 1 ? '' : 's'} and ${r.images} image${r.images === 1 ? '' : 's'}${all ? ` and ${r.prompts} kept prompt${r.prompts === 1 ? '' : 's'}` : ''}`); await refresh(); } catch (e) { toast(e.message, 'bad'); } };
   function renderBuilder() { const t = curTheme(); const b = BD.b; if (!t || !b) { $('bdGrid').innerHTML = ''; return; } const k = STATE.variantOrder.filter(v => (t.prompts[v] || '').trim()).length;
     $('bdProgress').innerHTML = `<b>${k} of ${STATE.variantOrder.length}</b> combinations kept`; $('bdComboNote').textContent = `${k} of ${STATE.variantOrder.length} kept · writer: ${b.writerModel || BD.writer}`;
     const all = !!$('bdAllDrafts').checked;
@@ -369,6 +373,12 @@
   function showZoom(r, e) { if (!r.out || cmpOpen()) return; Z.querySelector('img').src = `${r.out}?token=${encodeURIComponent(TOKEN)}&v=${r.doneAt || 0}`; Z.querySelector('.c').textContent = `${r.model}${r.foundation ? ' · ' + r.foundation : ''}${r.promptLabel ? ' · ' + r.promptLabel : ''}${r.quality ? ' · q:' + r.quality : ''}${r.judge && r.judge.likeness != null ? ' · likeness ' + r.judge.likeness : ''}`; Z.style.display = 'block'; zoomOn = true; moveZoom(e); }
   function moveZoom(e) { if (!zoomOn) return; const w = Z.offsetWidth, h = Z.offsetHeight; let x = e.clientX + 24, y = Math.min(Math.max(8, e.clientY - h / 2), window.innerHeight - h - 8); if (x + w > window.innerWidth - 8) x = e.clientX - w - 24; if (x < 8) x = 8; Z.style.left = x + 'px'; Z.style.top = y + 'px'; }
   function hideZoom() { Z.style.display = 'none'; zoomOn = false; }
+  // the results re-render every few seconds while pictures generate; a card replaced under the mouse never fires mouseleave, so
+  // the zoom also closes whenever the pointer is not on a picture, and on wheel-scroll, click, Esc, leaving the window or switching tabs
+  document.addEventListener('mousemove', e => { if (zoomOn && !(e.target && e.target.closest && e.target.closest('[data-view]'))) hideZoom(); });
+  for (const ev of ['wheel', 'mousedown', 'blur']) window.addEventListener(ev, () => { if (zoomOn) hideZoom(); }, true); // not 'scroll': showing the zoom itself fires one
+  document.documentElement.addEventListener('mouseleave', hideZoom); document.addEventListener('visibilitychange', hideZoom);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && zoomOn) hideZoom(); });
   const CMP = { mx: { ids: [], at: 0, per: 2, face: true, open: false, removed: new Set() }, bd: { ids: [], at: 0, per: 2, face: true, open: false, removed: new Set() } };
   const cmpOpen = () => Object.values(CMP).some(c => c.open);
   function cmpList(tab) { const root = $(tab + 'Grid'); return Array.from(root.querySelectorAll('.lab[data-id]')).map(d => d.dataset.id).filter(id => { const r = RUNS.find(x => x.id === id); return r && r.status === 'done'; }); }

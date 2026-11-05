@@ -84,6 +84,14 @@ async def main():
         names = sorted(z.namelist()); print('zip:', names)
         sf_txt = z.read('Space Pirates/single-female.md').decode(); print('single-female baked with foundation:', sf_txt.startswith('SIMPLE FACE RULES'), '| no markdown:', '##' not in sf_txt)
         tt = z.read('Space Pirates/theme.txt').decode(); print('theme.txt:\n' + tt)
+        # clear the page: first keeping the kept prompts, then everything
+        kept_before = [v for v in t['prompts'] if t['prompts'][v].strip()]
+        await pg.click('#bdClear'); await pg.wait_for_timeout(1500)
+        b = api('/api/builder/space-pirates')['builder']; t = [x for x in api('/api/state')['themes'] if x['slug'] == 'space-pirates'][0]; left = [r for r in api('/api/runs')['runs'] if r['theme'] == 'space-pirates']
+        print('clear (keep kept): kept prompts still', [v for v in t['prompts'] if t['prompts'][v].strip()], '(was', kept_before, ') | drafts left', len(b['drafts']), '| images left', len(left), '(the kept pictures) | kept runs intact:', all(r['id'] in [k['runId'] for k in b['kept'].values()] for r in left))
+        await pg.check('#bdClearKept'); await pg.click('#bdClear'); await pg.wait_for_timeout(1500)
+        b = api('/api/builder/space-pirates')['builder']; t = [x for x in api('/api/state')['themes'] if x['slug'] == 'space-pirates'][0]
+        print('clear everything: prompts', [v for v in t['prompts'] if t['prompts'][v].strip()], '| drafts', len(b['drafts']), '| images', len([r for r in api('/api/runs')['runs'] if r['theme'] == 'space-pirates']), '| description kept:', bool(b['description']), '| page shows:', (await pg.text_content('#bdProgress')).strip())
         # consolidated Prompt test still works
         await pg.click('#nav [data-t=matrix]'); await pg.wait_for_timeout(300)
         print('prompt test title:', (await pg.text_content('#tab-matrix h2'))[:12], '| face picker has faces:', len(await pg.query_selector_all('#mxFaces .face')))
