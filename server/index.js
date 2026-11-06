@@ -53,7 +53,7 @@ const PARALLEL = Math.max(1, Math.min(8, +process.env.LAB_PARALLEL || 4));
 // ---------- themes (same files as the booth: theme.json, prompts/<variant>.txt, thumb.png) ----------
 const VARIANTS = ['1-male', '1-female', '2-male-male', '2-female-female', '2-male-female', '2-female-male', 'pet-male', 'pet-female', 'pet-only'];
 const VARIANT_LABELS = { '1-male': 'Single male', '1-female': 'Single female', '2-male-male': 'Two males', '2-female-female': 'Two females', '2-male-female': 'Male (left) + female (right)', '2-female-male': 'Female (left) + male (right)', 'pet-male': 'Male + pet', 'pet-female': 'Female + pet', 'pet-only': 'Pet alone' };
-const VARIANT_FILES = { '1-male': ['single-male', '1-male', 'male', 'man'], '1-female': ['single-female', '1-female', 'female', 'woman'], '2-male-male': ['two-males', '2-male-male', 'male-male', 'two-men'], '2-female-female': ['two-females', '2-female-female', 'female-female', 'two-women'], '2-male-female': ['male-left-female-right', '2-male-female', 'male-female'], '2-female-male': ['female-left-male-right', '2-female-male', 'female-male'], 'pet-male': ['male-pet', 'pet-male', 'man-pet'], 'pet-female': ['female-pet', 'pet-female', 'woman-pet'], 'pet-only': ['pet-alone', 'pet-only', 'pet'] };
+const VARIANT_FILES = { '1-male': ['single-male', '1-male', 'male', 'man'], '1-female': ['single-female', '1-female', 'female', 'woman'], '2-male-male': ['two-males', '2-male-male', 'male-male', 'two-men'], '2-female-female': ['two-females', '2-female-female', 'female-female', 'two-women'], '2-male-female': ['male-left-female-right', '2-male-female', 'male-female'], '2-female-male': ['female-left-male-right', '2-female-male', 'female-male'], 'pet-male': ['male-pet', 'pet-male', 'man-pet'], 'pet-female': ['female-pet', 'pet-female', 'woman-pet'], 'pet-only': ['pet-alone', 'pet-only', 'single-pet', 'pet'] };
 const slugify = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'theme';
 function readTheme(slug) {
   const dir = path.join(THEMES, slug); if (!fs.existsSync(path.join(dir, 'theme.json'))) return null;
@@ -93,10 +93,12 @@ const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, nu
 const ownMaster = (f, variant) => (f && variant && f.combos && String(f.combos[variant] || '').trim()) || '';
 const masterText = (f, variant) => ownMaster(f, variant) || (f ? String(f.text || '').trim() : '');
 const hasMaster = f => !!f && (!!String(f.text || '').trim() || Object.values(f.combos || {}).some(x => String(x || '').trim()));
-const fdLabel = (f, variant) => !f ? null : ownMaster(f, variant) ? `${f.name} · ${VARIANT_LABELS[variant]} master` : f.name;
+/** a master with a [INSERT THEME] blank is a prompt writer: a text AI follows it to write the whole image prompt, and it never goes to the image model itself */
+const isWriterMaster = m => /\[INSERT THEME\]/i.test(m || '');
+const fdLabel = (f, variant) => !f ? null : isWriterMaster(masterText(f, variant)) ? `${f.name} · ${VARIANT_LABELS[variant] || 'general'} writer` : ownMaster(f, variant) ? `${f.name} · ${VARIANT_LABELS[variant]} master` : f.name;
 /** the foundation text that goes in front of a prompt: pick = 'none' | foundation id | '' (use the theme's choice) */
 function foundationFor(theme, pick) { const s = getSettings(); const want = pick === 'none' ? null : pick || (theme && (theme.settings.foundation || (theme.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); if (!want) return null; const f = (s.foundations || []).find(x => x.id === want); return hasMaster(f) ? f : null; }
-const withFoundation = (f, prompt, variant) => { const m = masterText(f, variant); return m ? m + '\n\n' + prompt : prompt; };
+const withFoundation = (f, prompt, variant) => { const m = masterText(f, variant); return m && !isWriterMaster(m) ? m + '\n\n' + prompt : prompt; };
 // ---------- OpenRouter ----------
 let modelCache = { at: 0, list: [] };
 async function orModels(force) { // image-capable models; cached for 10 minutes. supported_parameters is an object keyed by parameter name
@@ -260,6 +262,14 @@ function writerUser({ theme, b, variant, fd, others, note, previous, take, takes
   if (takes > 1) parts.push(`This is version ${take} of ${takes} written at the same time: pick a clearly different pose and outfit details from the other versions.`);
   parts.push('Write the theme section now.'); return parts.join('\n\n');
 }
+function writerMasterSystem(master, t, b, variant) { const adultPet = variant === 'pet-only' && b.rating === 'adult'; const desc = (b.description || '').trim(); const theme = t.name + (desc && !adultPet ? ' — ' + desc : ''); return master.replace(/\[INSERT THEME\]/gi, () => theme); }
+function writerMasterUser({ theme, b, variant, others, note, previous, take, takes }) { const pet = variant === 'pet-only', adultPet = pet && b.rating === 'adult';
+  const parts = [`COMBINATION: ${VARIANT_LABELS[variant]}`, `AUDIENCE: ${pet ? 'pet-safe and wholesome. A pet is only ever funny, never sexy or suggestive, so ignore any adult styling in the theme or notes' : b.rating === 'adult' ? 'an 18+ party. Every person in the photos is a confirmed adult, 18 or older, so take the theme styling as far as these instructions allow' : 'all ages, so keep it tasteful and non-suggestive'}.`];
+  if (others.length && !adultPet) parts.push('ALREADY APPROVED COMBINATIONS OF THIS THEME (match their costume and prop design so the set reads as one):\n' + others.slice(0, 2).map(o => `- ${VARIANT_LABELS[o.v]}: ${(theme.prompts[o.v] || '').trim().slice(0, 6000)}`).join('\n'));
+  if (previous && !adultPet) parts.push(`PREVIOUS ATTEMPT FOR THIS COMBINATION (the owner wants a different take):\n<<<\n${previous.slice(0, 6000)}\n>>>`);
+  if (note) parts.push(`OWNER'S NOTE FOR THIS ATTEMPT: ${note}`);
+  if (takes > 1) parts.push(`This is version ${take} of ${takes} written at the same time: pick a clearly different pose and costume details from the other versions.`);
+  parts.push('Write the finished image-generation prompt now.'); return parts.join('\n\n'); }
 const cleanWriter = t => String(t || '').replace(/^\s*#+\s.*$/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/\*\*|__/g, '').replace(/^["“]|["”]$/g, '').replace(/\n{3,}/g, '\n\n').trim();
 async function writeText(model, system, user) { // OpenAI direct when the id has no provider prefix, otherwise OpenRouter chat
   const t0 = Date.now(); let text = '', usage = null;
@@ -336,6 +346,19 @@ app.post('/api/plotter-test/presets', auth, (req, res) => { // add a new batch; 
   ptSave(state); res.json({ added, refused, state }); });
 app.patch('/api/plotter-test/:n', auth, (req, res) => { const state = ptState(); const p = state.presets.find(x => x.n === +req.params.n); if (!p) return res.status(404).json({ error: 'no such preset' }); if ('rating' in req.body) p.rating = Math.max(0, Math.min(5, Math.round(+req.body.rating) || 0)); if ('note' in req.body) p.note = String(req.body.note || '').slice(0, 300); if ('deleted' in req.body) { p.deleted = !!req.body.deleted; p.deletedAt = p.deleted ? Date.now() : undefined; } ptSave(state); res.json(p); });
 app.post('/api/plotter-test/:n/run', auth, (req, res) => { const state = ptState(); const p = state.presets.find(x => x.n === +req.params.n); if (!p) return res.status(404).json({ error: 'no such preset' }); const b = req.body || {}; p.runs = (p.runs || []).concat({ at: Date.now(), seconds: Math.round(+b.seconds || 0), estSeconds: Math.round(+b.estSeconds || 0), strokes: Math.round(+b.strokes || 0), inkMm: Math.round(+b.inkMm || 0), picture: String(b.picture || '').slice(0, 120) }).slice(-20); ptSave(state); res.json(p); });
+
+/** import a zip of master prompts: each folder becomes a foundation ("Normal_Head" in a v1.3 zip → "Normal Head v1.3"), each file goes to the combination it is named after. ?preview=1 only reports. */
+app.post('/api/foundations/import', auth, upload.single('zip'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no zip uploaded' }); const AdmZip = require('adm-zip'); let entries; try { entries = new AdmZip(req.file.buffer).getEntries(); } catch (_) { return res.status(400).json({ error: 'that file is not a readable zip' }); }
+  const zipName = String(req.file.originalname || 'Masters').replace(/\.zip$/i, ''); const ver = ((entries.map(e => e.entryName).join(' ') + ' ' + zipName).match(/[_\s-]v(\d+(?:\.\d+)*)/i) || [])[1]; const groups = new Map(), ignored = [];
+  for (const e of entries) { if (e.isDirectory || /(^|\/)(__MACOSX|\.)/.test(e.entryName)) continue; const parts = e.entryName.split('/'); const file = parts.pop(); if (!/\.(md|markdown|txt)$/i.test(file) || /^readme\./i.test(file)) continue; const v = variantFor(file); if (!v || e.header.size > 100000) { ignored.push(e.entryName); continue; }
+    const folder = (parts.pop() || zipName).replace(/[_-]+/g, ' ').trim(); const name = (ver && !new RegExp('v' + ver.replace(/\./g, '\\.') + '\\b', 'i').test(folder) ? `${folder} v${ver}` : folder).slice(0, 40); if (!groups.has(name)) groups.set(name, {}); groups.get(name)[v] = e.getData().toString('utf8').replace(/^\uFEFF/, '').trim(); }
+  if (!groups.size) return res.status(400).json({ error: 'no files in that zip are named after a combination' });
+  const s = getSettings(); const list = (s.foundations || []).slice(); const report = [];
+  for (const [name, combos] of groups) { const id = slugify(name); const cur = list.find(f => f.id === id); report.push({ name, id, isNew: !cur, combinations: Object.keys(combos).map(v => VARIANT_LABELS[v]), writers: Object.values(combos).filter(isWriterMaster).length }); if (cur) cur.combos = combos; else list.push({ id, name, text: '', combos }); }
+  if (req.query.preview !== '1') { s.foundations = list; saveSettings(s); }
+  res.json({ ok: true, foundations: report, ignored });
+});
 
 // themes
 app.post('/api/themes/import', auth, upload.single('zip'), async (req, res) => {
@@ -426,12 +449,12 @@ app.post('/api/test/matrix', auth, (req, res) => {
   const s = getSettings(); const fids = (Array.isArray(req.body.foundations) ? req.body.foundations : []).map(String).slice(0, 4); if (!fids.length) return res.status(400).json({ error: 'tick at least one foundation' });
   const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const variant = VARIANTS.includes(req.body.variant) ? req.body.variant : null;
   const quals = (Array.isArray(req.body.qualities) && req.body.qualities.length ? req.body.qualities : [(req.body.opts || {}).quality || '']).map(q => String(q || '')).slice(0, 6); const multiQ = quals.length > 1;
-  const batch = 'm' + Date.now().toString(36); const out = [];
-  for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fdLabel(fd, variant) : null; if (fname === null) continue;
+  const batch = 'm' + Date.now().toString(36); const out = [], writers = [];
+  for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fdLabel(fd, variant) : null; if (fname === null) continue; if (fd && isWriterMaster(masterText(fd, variant))) { writers.push(fd.name); continue; }
     for (const p of prompts) for (const q of quals) for (const model of models) {
       const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, quality: multiQ ? (q || 'default') : null, fullPrompt: withFoundation(fd, p.text, variant), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: Object.assign({}, req.body.opts || {}, { quality: q }), createdAt: Date.now() };
       enqueue(r); out.push(pubRun(r)); } }
-  if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
+  if (!out.length) return res.status(400).json({ error: writers.length ? `${writers.join(', ')} writes prompts rather than going to the image model. Use it in the Theme builder.` : 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
 });
 // ----- theme builder -----
@@ -452,7 +475,8 @@ app.post('/api/builder/:slug/write', auth, (req, res) => {
   for (const v of variants) { const prev = [...b.drafts].reverse().find(d => d.variant === v && d.status === 'ready');
     for (let k = 1; k <= per; k++) { const d = { id: crypto.randomBytes(5).toString('hex'), variant: v, prompt: '', status: 'writing', note: String(notes[v] || '').slice(0, 500), writer, foundationId: fd ? fid : null, batch, createdAt: Date.now() }; b.drafts.push(d); made.push(d);
       const user = writerUser({ theme: t, b, variant: v, fd, others: others.filter(o => o.v !== v), note: d.note, previous: prev ? prev.prompt : (t.prompts[v] || '').trim() || null, take: k, takes: per });
-      writing++; writeText(writer, WRITER_SYSTEM, user).then(({ text, ms }) => { const nb = readBuilder(t.slug); const dd = nb.drafts.find(x => x.id === d.id); if (!dd) return; Object.assign(dd, { prompt: text, status: 'ready', seconds: Math.round(ms / 100) / 10 });
+      const master = masterText(fd, v), asWriter = isWriterMaster(master);
+      writing++; writeText(writer, asWriter ? writerMasterSystem(master, t, b, v) : WRITER_SYSTEM, asWriter ? writerMasterUser({ theme: t, b, variant: v, others: others.filter(o => o.v !== v), note: d.note, previous: prev ? prev.prompt : (t.prompts[v] || '').trim() || null, take: k, takes: per }) : user).then(({ text, ms }) => { const nb = readBuilder(t.slug); const dd = nb.drafts.find(x => x.id === d.id); if (!dd) return; Object.assign(dd, { prompt: text, status: 'ready', seconds: Math.round(ms / 100) / 10 });
           if (models.length && faces[v]) dd.runs = buildRuns(readTheme(t.slug), nb, dd, models, faces[v], q.opts, batch).map(r => r.id); saveBuilder(t.slug, nb); })
         .catch(e => { const nb = readBuilder(t.slug); const dd = nb.drafts.find(x => x.id === d.id); if (dd) { dd.status = 'failed'; dd.error = String(e.message || e).slice(0, 300); saveBuilder(t.slug, nb); } console.error('writer', t.slug, v, e.message); })
         .finally(() => { writing--; }); } }
