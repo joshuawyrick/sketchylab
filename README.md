@@ -11,6 +11,9 @@ keep a library of reference faces, and run every combination's prompt across man
   only the rest — the AI sees the kept prompts and its previous attempt, plus an optional note per combination. Edit & test a
   draft by hand. ★ Keep all prompts keeps the newest prompt of every combination not kept yet without testing an image (★ Keep on a
   draft does it for one); the booth then uses its default model for those, un-keep, test the kept prompts again, import/replace from a zip, and export the finished theme for the booth.
+- **Hats from the photo** (per theme, in the Theme builder): Not set / Use the theme's headwear / Keep what they're wearing / No hat.
+  When set, one fixed paragraph goes after every prompt of the theme (not Pet alone) in tests and in the booth export; glasses worn
+  on the face are always kept with clear lenses, glasses on a hat or the head go with the hat. The prompt writer is told about it.
 - **Prompt test** — 1–4 prompts × 1–4 foundations × models × quality levels, all at once, each result labeled; one prompt
   and one foundation works as a quick scratchpad. Scores, hover zoom and a side-by-side compare strip.
 - **Full prompt** — every result has a "Full prompt" button: the exact, complete text the image model got (foundation or master and prompt

@@ -99,6 +99,15 @@ const fdLabel = (f, variant) => !f ? null : isWriterMaster(masterText(f, variant
 /** the foundation text that goes in front of a prompt: pick = 'none' | foundation id | '' (use the theme's choice) */
 function foundationFor(theme, pick) { const s = getSettings(); const want = pick === 'none' ? null : pick || (theme && (theme.settings.foundation || (theme.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); if (!want) return null; const f = (s.foundations || []).find(x => x.id === want); return hasMaster(f) ? f : null; }
 const withFoundation = (f, prompt, variant) => { const m = masterText(f, variant); return m && !isWriterMaster(m) ? m + '\n\n' + prompt : prompt; };
+// ---------- hats & glasses the guest wears in the photo: one theme setting (settings.headwear), added after the prompt in tests and in the booth export ----------
+const GLASSES_RULE = 'Glasses worn over the eyes always stay: draw the frames as simple outlines with clear, empty lenses so the eyes show through; sunglasses become clear glasses of the same frame shape.';
+const HEADWEAR = {
+  theme: { label: "Use the theme's headwear", text: `HATS AND GLASSES FROM THE PHOTO: Leave out any hat, cap, beanie, hood, headband or other headwear a person wears in the photo, and anything resting on it or pushed up on the head (such as sunglasses); do not draw them. Draw only the headwear this theme calls for, never one hat on top of another. If the theme calls for no headwear, show the person's natural hair, keeping their real hairline wherever the photo shows it. ${GLASSES_RULE}` },
+  keep: { label: "Keep what they're wearing", text: `HATS AND GLASSES FROM THE PHOTO: Draw any hat, cap or other headwear a person wears in the photo exactly as it is, in the same plain outline style, together with anything resting on it (such as sunglasses on the brim). It takes the place of this theme's own headwear; never put a theme hat on top of theirs. A person who wears no headwear in the photo gets the theme's headwear as described. ${GLASSES_RULE}` },
+  none: { label: 'No hat', text: `HATS AND GLASSES FROM THE PHOTO: Leave out any hat, cap, beanie, hood, headband or other headwear a person wears in the photo, and anything resting on it or pushed up on the head (such as sunglasses), and add no hat for the theme either: show each person's natural hair, keeping their real hairline wherever the photo shows it. ${GLASSES_RULE}` } };
+const headwearRule = (t, variant) => { const h = HEADWEAR[t && t.settings && t.settings.headwear]; return h && variant !== 'pet-only' ? h.text : ''; }; // a pet on its own has no hat rule
+const withRule = (prompt, rule) => rule ? String(prompt).replace(/\s+$/, '') + '\n\n' + rule : prompt;
+const WRITER_HAT_NOTE = 'HATS AND GLASSES: a fixed rule about the hat and glasses each guest wears in their photo is added after your text automatically. Do not write anything about the guest\'s own hat, cap or glasses.';
 // ---------- OpenRouter ----------
 let modelCache = { at: 0, list: [] };
 async function orModels(force) { // image-capable models; cached for 10 minutes. supported_parameters is an object keyed by parameter name
@@ -262,6 +271,7 @@ function writerUser({ theme, b, variant, fd, others, note, previous, take, takes
   if (previous) parts.push(`PREVIOUS ATTEMPT FOR THIS COMBINATION (the owner wants a different take, keep what fits the theme):\n<<<\n${previous}\n>>>`);
   if (note) parts.push(`OWNER'S NOTE FOR THIS ATTEMPT: ${note}`);
   if (takes > 1) parts.push(`This is version ${take} of ${takes} written at the same time: pick a clearly different pose and outfit details from the other versions.`);
+  if (headwearRule(theme, variant)) parts.push(WRITER_HAT_NOTE);
   parts.push('Write the theme section now.'); return parts.join('\n\n');
 }
 function writerMasterSystem(master, t, b, variant) { const adultPet = variant === 'pet-only' && b.rating === 'adult'; const desc = (b.description || '').trim(); const theme = t.name + (desc && !adultPet ? ' — ' + desc : ''); return master.replace(/\[INSERT THEME\]/gi, () => theme); }
@@ -271,6 +281,7 @@ function writerMasterUser({ theme, b, variant, others, note, previous, take, tak
   if (previous && !adultPet) parts.push(`PREVIOUS ATTEMPT FOR THIS COMBINATION (the owner wants a different take):\n<<<\n${previous.slice(0, 6000)}\n>>>`);
   if (note) parts.push(`OWNER'S NOTE FOR THIS ATTEMPT: ${note}`);
   if (takes > 1) parts.push(`This is version ${take} of ${takes} written at the same time: pick a clearly different pose and costume details from the other versions.`);
+  if (headwearRule(theme, variant)) parts.push(WRITER_HAT_NOTE);
   parts.push('Write the finished image-generation prompt now.'); return parts.join('\n\n'); }
 const cleanWriter = t => String(t || '').replace(/^\s*#+\s.*$/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/\*\*|__/g, '').replace(/^["“]|["”]$/g, '').replace(/\n{3,}/g, '\n\n').trim();
 async function writeText(model, system, user) { // OpenAI direct when the id has no provider prefix, otherwise OpenRouter chat
@@ -291,7 +302,7 @@ async function writeText(model, system, user) { // OpenAI direct when the id has
 const writerModelOf = b => (b.writerModel || getSettings().writerModel || (OAI_KEY ? 'gpt-5.5' : 'openai/gpt-5.5')).trim();
 let writing = 0; // drafts being written right now (the page polls while > 0)
 function buildRuns(t, b, d, models, face, opts, batch) { const fd = foundationById(d.foundationId); const out = [];
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'build', batch, theme: t.slug, themeName: t.name, variant: d.variant, draft: d.id, face: face || null, model, prompt: d.prompt, fullPrompt: withFoundation(fd, d.prompt, d.variant), foundation: fdLabel(fd, d.variant), foundationId: d.foundationId || null, moderation: d.variant === 'pet-only' ? null : t.settings.moderation || (b.rating === 'adult' ? 'low' : null), opts: opts || {}, createdAt: Date.now() }; enqueue(r); out.push(r); }
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'build', batch, theme: t.slug, themeName: t.name, variant: d.variant, draft: d.id, face: face || null, model, prompt: d.prompt, fullPrompt: withFoundation(fd, withRule(d.prompt, headwearRule(t, d.variant)), d.variant), rule: headwearRule(t, d.variant) || undefined, foundation: fdLabel(fd, d.variant), foundationId: d.foundationId || null, moderation: d.variant === 'pet-only' ? null : t.settings.moderation || (b.rating === 'adult' ? 'low' : null), opts: opts || {}, createdAt: Date.now() }; enqueue(r); out.push(r); }
   return out; }
 /** booth model names: the booth calls OpenAI directly, so "openai-direct/x" and OpenRouter's "openai/x" become "x"; anything else it can't run */
 const boothModel = m => { const s = String(m || '').trim(); if (!s) return ''; if (s.startsWith(DIRECT)) return s.slice(DIRECT.length); if (s.startsWith('openai/')) return s.slice(7); return s.includes('/') ? null : s; };
@@ -386,7 +397,7 @@ app.get('/api/themes/export', auth, async (req, res) => {
   for (const t of which) { const dir = t.name.replace(/[\\/:*?"<>|]/g, '-');
     const fd = req.query.bake === '1' ? foundationFor(t, '') : null; // bake=1: foundation text goes in front of every prompt file, so the booth draws exactly what the lab tested
     const kept = readBuilder(t.slug).kept || {};
-    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) { const fv = req.query.bake === '1' && kept[v] && kept[v].foundationId ? foundationById(kept[v].foundationId) || fd : fd; zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fv, t.prompts[v].trim(), v), 'utf8')); }
+    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) { const fv = req.query.bake === '1' && kept[v] && kept[v].foundationId ? foundationById(kept[v].foundationId) || fd : fd; zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fv, withRule(t.prompts[v].trim(), req.query.bake === '1' ? headwearRule(t, v) : ''), v), 'utf8')); }
     const lines = []; for (const [k, v] of Object.entries(t.settings || {})) { if (/(^|\.)model$/.test(k)) { const bm = boothModel(v); if (bm) lines.push(`${k}: ${bm}`); else if (bm === null) lines.push(`# ${k.replace(/\.model$/, '')} was tested on ${v}; the booth only runs OpenAI models, so it will use the theme/default model`); } else lines.push(`${k}: ${v}`); }
     if (lines.length) zip.addFile(`${dir}/theme.txt`, Buffer.from(lines.join('\n') + '\n', 'utf8'));
     const th = path.join(THEMES, t.slug, 'thumb.png'); if (await ensureLocal(th)) zip.addFile(`${dir}/thumbnail.png`, fs.readFileSync(th)); }
@@ -431,7 +442,7 @@ app.post('/api/test/theme', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const faces = req.body.faces || {}; const batch = 'b' + Date.now().toString(36); const out = []; const fd = foundationFor(t, req.body.foundation);
   for (const v of VARIANTS) { const prompt = (t.prompts[v] || '').trim(); const face = faces[v]; if (!prompt || !face) continue;
-    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt, v), foundation: fdLabel(fd, v), moderation: t.settings.moderation || null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
+    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, withRule(prompt, headwearRule(t, v)), v), rule: headwearRule(t, v) || undefined, foundation: fdLabel(fd, v), moderation: t.settings.moderation || null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'nothing to run — give at least one combination a face (and make sure it has a prompt)' });
   res.json({ ok: true, batch, runs: out });
 });
@@ -441,7 +452,7 @@ app.post('/api/test/prompt', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const batch = 'b' + Date.now().toString(36); const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const out = [];
   const fd = foundationFor(t, req.body.foundation);
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt, req.body.variant), foundation: fdLabel(fd, req.body.variant), moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, withRule(prompt, t ? headwearRule(t, req.body.variant) : ''), req.body.variant), rule: (t && headwearRule(t, req.body.variant)) || undefined, foundation: fdLabel(fd, req.body.variant), moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
   res.json({ ok: true, batch, runs: out });
 });
 /** matrix: { face, variant?, theme?, foundations: [id|'none'], prompts: [{label, text}], models, opts } → one run per foundation × prompt × model, all tagged with the matrix batch */
@@ -463,7 +474,7 @@ app.post('/api/test/matrix', auth, (req, res) => {
 app.get('/api/builder/:slug', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); res.json({ builder: readBuilder(t.slug), writer: writerModelOf(readBuilder(t.slug)) }); });
 app.post('/api/builder/:slug', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const b = readBuilder(t.slug); const q = req.body || {};
   if ('description' in q) b.description = String(q.description || '').slice(0, 6000); if ('rating' in q) b.rating = q.rating === 'adult' ? 'adult' : 'family'; if ('writerModel' in q) b.writerModel = String(q.writerModel || '').trim().slice(0, 120); saveBuilder(t.slug, b);
-  const st = {}; if ('rating' in q) st.rating = b.rating; if ('foundation' in q) st.foundation = String(q.foundation || ''); if ('proportions' in q) st.proportions = q.proportions === 'bighead' ? 'bighead' : 'normal'; if (Object.keys(st).length) { t.settings = Object.assign({}, t.settings, st); writeTheme(t.slug, t); }
+  const st = {}; if ('rating' in q) st.rating = b.rating; if ('foundation' in q) st.foundation = String(q.foundation || ''); if ('proportions' in q) st.proportions = q.proportions === 'bighead' ? 'bighead' : 'normal'; if ('headwear' in q) st.headwear = HEADWEAR[q.headwear] ? q.headwear : null; if (Object.keys(st).length) { t.settings = Object.assign({}, t.settings, st); if (!t.settings.headwear) delete t.settings.headwear; writeTheme(t.slug, t); }
   res.json({ ok: true, builder: b, theme: readTheme(t.slug) }); });
 /** write N drafts for each combination (in parallel), then test each draft on the face(s) with the ticked models
     { variants:[...], perCombo, models:[...], faces:{v:faceId}, notes:{v:text}, opts } */

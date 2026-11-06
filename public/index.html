@@ -79,6 +79,7 @@
             <div class="row"><label>Name</label><input type="text" id="bdName" style="max-width:300px"><span class="note" id="bdProgress"></span></div>
             <div class="row"><label>Foundation</label><select id="bdFound" style="width:auto"></select><span class="note">the "how" — its master prompts go word for word in front of each prompt</span></div>
             <div class="row"><label>Audience</label><span class="seg" id="bdRating"><button data-v="family">Family</button><button data-v="adult">Adult 18+</button></span><label style="min-width:0;margin-left:14px">Head</label><span class="seg" id="bdHead"><button data-v="normal">Normal</button><button data-v="bighead">Big head</button></span></div>
+            <div class="row"><label>Hats from the photo</label><select id="bdHat" style="width:auto"><option value="">Not set (the prompt decides)</option><option value="theme">Use the theme's headwear</option><option value="keep">Keep what they're wearing</option><option value="none">No hat</option></select><span class="note">added to every prompt of this theme (not Pet alone) in tests and the export · glasses on the face are always kept with clear lenses; glasses on a hat or the head go with the hat</span></div>
             <div class="row"><label>Prompt-writing AI</label><input type="text" id="bdWriter" list="writerList" style="max-width:260px" placeholder="gpt-5.5"><datalist id="writerList"></datalist><span class="note">a model on your OpenAI account, or an OpenRouter id like <code>openai/gpt-5.5</code></span></div>
           </div>
         </div>
@@ -225,7 +226,7 @@
   function renderBuilderHead() { const t = curTheme(); if (!t || !BD.b) return; const b = BD.b;
     $('bdThumb').innerHTML = t.hasThumb ? `<img src="/api/themes/${t.slug}/thumb?token=${encodeURIComponent(TOKEN)}&v=${Date.now()}"><div class="n">thumbnail · click to change</div>` : '<div class="ph">no thumbnail yet — keep a result, or click to upload one</div>';
     if (document.activeElement !== $('bdName')) $('bdName').value = t.name; $('bdFound').innerHTML = foundOpts(false); $('bdFound').value = themeFound(t); if (!$('bdFound').value) $('bdFound').value = 'none'; showFoundText();
-    $('bdRating').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === (b.rating || 'family'))); $('bdHead').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === (t.settings.proportions === 'bighead' ? 'bighead' : 'normal')));
+    $('bdRating').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === (b.rating || 'family'))); $('bdHead').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === (t.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); $('bdHat').value = t.settings.headwear || '';
     if (document.activeElement !== $('bdWriter')) { $('bdWriter').value = b.writerModel || ''; $('bdWriter').placeholder = BD.writer || 'gpt-5.5'; } if (document.activeElement !== $('bdDesc')) $('bdDesc').value = b.description || '';
     $('bdExport').href = '/api/themes/export?slug=' + t.slug + '&bake=1&token=' + encodeURIComponent(TOKEN); }
   const saveB = async q => { if (!BD.slug) return; try { const r = await api('/api/builder/' + BD.slug, { method: 'POST', json: q }); BD.b = r.builder; const i = STATE.themes.findIndex(x => x.slug === BD.slug); if (i >= 0) STATE.themes[i] = r.theme; } catch (e) { toast(e.message, 'bad'); } };
@@ -233,6 +234,7 @@
   $('bdWriter').onchange = () => saveB({ writerModel: $('bdWriter').value.trim() });
   $('bdFound').onchange = async () => { const q = { foundation: $('bdFound').value }; const f = curFound(); if (f && hasWriters(f)) q.proportions = /big/i.test(f.id + f.name) ? 'bighead' : 'normal'; await saveB(q); renderBuilderHead(); showFoundText(); toast('Foundation set for this theme'); renderBuilder(); };
   $('bdRating').querySelectorAll('button').forEach(x => x.onclick = async () => { await saveB({ rating: x.dataset.v }); renderBuilderHead(); });
+  $('bdHat').onchange = async () => { await saveB({ headwear: $('bdHat').value }); renderBuilderHead(); toast($('bdHat').value ? `Hats: ${$('bdHat').selectedOptions[0].textContent} — added to new tests and the export` : 'Hats: not set — nothing added to the prompts'); };
   $('bdHead').querySelectorAll('button').forEach(x => x.onclick = async () => { const fs = STATE.settings.foundations || []; const q = { proportions: x.dataset.v }; const cur = curFound(); const pool = cur && hasWriters(cur) ? fs.filter(hasWriters) : fs; const want = pool.find(f => x.dataset.v === 'bighead' ? /big/i.test(f.id + f.name) : pool === fs ? f.id === 'normal' : /normal/i.test(f.id + f.name)); if (want && hasMaster(want)) q.foundation = want.id; await saveB(q); renderBuilderHead(); if (q.foundation) toast(`Head: ${x.dataset.v === 'bighead' ? 'big' : 'normal'} — foundation switched to ${want.name}`); });
   $('bdName').onchange = async () => { const n = $('bdName').value.trim(); if (!n) return; await api('/api/themes/' + BD.slug, { method: 'PUT', json: { name: n } }); toast('Renamed'); refresh(); };
   $('bdThumb').onclick = () => $('bdThumbIn').click(); $('bdThumbIn').onchange = async () => { const f = $('bdThumbIn').files[0]; $('bdThumbIn').value = ''; if (!f) return; const fd = new FormData(); fd.append('thumb', f); await api('/api/themes/' + BD.slug + '/thumb', { method: 'POST', body: fd }); toast('Thumbnail updated'); refresh(); };
@@ -429,7 +431,9 @@
     wireCmp(tab); wire(el); }
   // ---------- Full prompt: the exact text the image model got, split into foundation + prompt, plus what went with it ----------
   const FP = { text: '' };
-  function promptParts(r) { const full = r.fullPrompt || r.prompt || '', p = r.prompt || '';
+  function promptParts(r) { const whole = r.fullPrompt || r.prompt || '';
+    if (r.rule && whole.endsWith('\n\n' + r.rule)) return promptParts(Object.assign({}, r, { rule: null, fullPrompt: whole.slice(0, -(r.rule.length + 2)), prompt: (r.prompt || '').replace(/\s+$/, '') })).concat([{ label: 'Hats & glasses rule (theme setting)', text: r.rule }]);
+    const full = whole, p = r.prompt || '';
     if (r.refined) return [{ label: 'Refine prompt (a second pass over a finished drawing)', text: full }];
     const fname = r.foundation || '', writer = / writer$/.test(fname);
     if (r.fullPrompt && p && full !== p && full.endsWith(p)) return [{ label: (/ master$/.test(fname) ? 'Master prompt — ' : 'Foundation — ') + (fname || 'unnamed'), text: full.slice(0, full.length - p.length).trim() }, { label: r.kind === 'build' ? 'Prompt written for this combination' : r.kind === 'matrix' ? 'Prompt' + (r.promptLabel ? ' — ' + r.promptLabel : '') : 'Prompt', text: p }];
