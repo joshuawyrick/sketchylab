@@ -55,6 +55,11 @@ async def main():
         check(by['pet-only']['fullPrompt'].startswith(PET) and GENERAL not in by['pet-only']['fullPrompt'], 'Pet alone tests with its own master')
         check(by['1-female']['fullPrompt'].startswith(GENERAL), 'Single female falls back to All combinations')
         check(by['pet-only']['foundation'] == 'Normal · Pet alone master' and by['1-female']['foundation'] == 'Normal', 'results are labeled with the master used')
+        # Full prompt box names the master and splits it from the prompt
+        sel = f'.lab[data-id="{by["pet-only"]["id"]}"] [data-full]'; await pg.wait_for_selector(sel, timeout=15000); await pg.click(sel); await pg.wait_for_timeout(300)
+        secs = await pg.eval_on_selector_all('#fpText .sec', 'els => els.map(e => e.textContent)'); pre = await pg.eval_on_selector_all('#fpText pre', 'els => els.map(e => e.textContent)')
+        check(secs[0] == 'Master prompt — Normal · Pet alone master' and pre[0] == PET and PET + '\n\n' + pre[1] == by['pet-only']['fullPrompt'], 'Full prompt shows the Pet alone master, then the prompt')
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
         check(not by['pet-only'].get('moderation') and by['1-male'].get('moderation') == 'low', 'Pet alone keeps standard moderation in an adult theme')
         log = open('test/fakeor.log').read(); pet = [l for l in log.splitlines() if 'COMBINATION: Pet alone' in l]; man = [l for l in log.splitlines() if 'COMBINATION: Single male' in l]
         check(pet and 'AUDIENCE: family' in pet[0] and PET in pet[0], 'prompt writer gets family audience and the pet master'); check(man and 'AUDIENCE: adult' in man[0] and MALE in man[0], 'an adult theme stays adult for people')
@@ -95,6 +100,10 @@ async def main():
         wr = {r['variant']: r for r in rs2}; check(set(wr) == {'1-male', 'pet-only'}, 'prompt writers produced images')
         check('GENERATOR' not in wr['1-male']['fullPrompt'] and 'INSERT THEME' not in wr['1-male']['fullPrompt'] and wr['1-male']['fullPrompt'] == wr['1-male']['prompt'], 'image model gets only the finished prompt')
         check(wr['1-male']['foundation'] == 'Normal Head v9.9 · Single male writer', 'results name the writer')
+        sel = f'.lab[data-id="{wr["1-male"]["id"]}"] [data-full]'; await pg.wait_for_selector(sel, timeout=15000); await pg.click(sel); await pg.wait_for_timeout(300)
+        secs = await pg.eval_on_selector_all('#fpText .sec', 'els => els.map(e => e.textContent)'); pre = await pg.eval_on_selector_all('#fpText pre', 'els => els.map(e => e.textContent)')
+        check(len(secs) == 1 and 'Normal Head v9.9 · Single male writer master' in secs[0] and 'not sent' in secs[0] and pre[0] == wr['1-male']['fullPrompt'], 'Full prompt of a prompt-writer image: only the finished prompt, labeled')
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
         log = [l for l in open('test/fakeor.log').read().splitlines()[before:] if 'SYS[GENERATOR' in l]; lm = next((l for l in log if 'single-male' in l), ''); lp = next((l for l in log if 'single-pet' in l), '')
         check('Normal_Head single-male' in lm and 'THEME: Pirates — Space pirates with cutlasses' in lm and 'confirmed adult' in lm, 'text AI gets the right file, the filled-in theme and the 18+ audience')
         check('Normal_Head single-pet' in lp and 'THEME: Pirates ##' in lp and 'cutlasses' not in lp and 'never sexy' in lp, 'an adult theme stays out of the pet writer')
