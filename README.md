@@ -9,7 +9,8 @@ keep a library of reference faces, and run every combination's prompt across man
   the foundation; every draft is tested on the faces and image models you tick. ★ Keep the winners (the prompt and model
   are saved into the theme, the first keep becomes the thumbnail), then "Write & test every combination not kept yet" retries
   only the rest — the AI sees the kept prompts and its previous attempt, plus an optional note per combination. Edit & test a
-  draft by hand, un-keep, test the kept prompts again, import/replace from a zip, and export the finished theme for the booth.
+  draft by hand. ★ Keep all prompts keeps the newest prompt of every combination not kept yet without testing an image (★ Keep on a
+  draft does it for one); the booth then uses its default model for those, un-keep, test the kept prompts again, import/replace from a zip, and export the finished theme for the booth.
 - **Prompt test** — 1–4 prompts × 1–4 foundations × models × quality levels, all at once, each result labeled; one prompt
   and one foundation works as a quick scratchpad. Scores, hover zoom and a side-by-side compare strip.
 - **Full prompt** — every result has a "Full prompt" button: the exact, complete text the image model got (foundation or master and prompt

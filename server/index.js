@@ -496,6 +496,15 @@ app.post('/api/builder/:slug/keep', auth, async (req, res) => { const t = readTh
   if (!r.star) { r.star = true; saveRun(r); } // kept results survive "Clear"
   let thumb = false; if (!t.hasThumb) { const f = path.join(RUNS, r.id, 'out.png'); if (await ensureLocal(f)) { await sharp(f).resize(700, 700, { fit: 'inside', withoutEnlargement: true }).png().toFile(path.join(THEMES, t.slug, 'thumb.png')); persist(path.join(THEMES, t.slug, 'thumb.png')); thumb = true; } }
   res.json({ ok: true, thumb, builder: b, theme: readTheme(t.slug) }); });
+/** keep prompts without an image: { draftId } keeps that draft; otherwise every combination not kept yet gets its newest finished draft. No image model is recorded, so the booth uses the theme's / default model for those. */
+app.post('/api/builder/:slug/keep-drafts', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const b = readBuilder(t.slug); const q = req.body || {};
+  const ready = d => d && d.status === 'ready' && String(d.prompt || '').trim();
+  let picks = [];
+  if (q.draftId) { const d = b.drafts.find(x => x.id === q.draftId); if (!ready(d)) return res.status(404).json({ error: 'that draft has no finished prompt' }); picks = [d]; }
+  else for (const v of VARIANTS) { if ((t.prompts[v] || '').trim()) continue; const d = b.drafts.filter(x => x.variant === v && ready(x)).sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0))[0]; if (d) picks.push(d); }
+  for (const d of picks) { t.prompts[d.variant] = d.prompt; delete t.settings[VARIANT_FILES[d.variant][0] + '.model']; b.kept[d.variant] = { runId: null, draftId: d.id, foundationId: d.foundationId || t.settings.foundation || null, at: Date.now() }; }
+  if (picks.length) { writeTheme(t.slug, t); saveBuilder(t.slug, b); }
+  const th = readTheme(t.slug); res.json({ ok: true, kept: picks.map(d => d.variant), missing: VARIANTS.filter(v => !(th.prompts[v] || '').trim()), builder: b, theme: th }); });
 app.post('/api/builder/:slug/unkeep', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); const v = (req.body || {}).variant; if (!t || !VARIANTS.includes(v)) return res.status(404).end(); const b = readBuilder(t.slug); delete b.kept[v]; saveBuilder(t.slug, b); t.prompts[v] = ''; delete t.settings[VARIANT_FILES[v][0] + '.model']; writeTheme(t.slug, t); res.json({ ok: true, builder: b, theme: readTheme(t.slug) }); });
 /** wipe the page: every draft and every generated image of this theme; { all: true } also clears the kept prompts (description and foundation stay) */
 app.post('/api/builder/:slug/clear', auth, (req, res) => { const t = readTheme(slugify(req.params.slug)); if (!t) return res.status(404).json({ error: 'theme not found' }); const all = !!(req.body && req.body.all); const b = readBuilder(t.slug);
