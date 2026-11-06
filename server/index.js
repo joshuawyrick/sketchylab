@@ -148,8 +148,10 @@ async function oaiImage(run) { // one OpenAI model on one face, straight to api.
     const item = d.data && d.data[0]; if (!item || !item.b64_json) throw new Error('no image in the response');
     let png = Buffer.from(item.b64_json, 'base64'); if (fields.output_format !== 'png') png = await sharp(png).png().toBuffer();
     return { png, cost: oaiCost(model, d.usage), ms: Date.now() - t0, sent: Object.keys(fields).filter(k => k !== 'prompt' && k !== 'n') };
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); recordSent(run, fields, imgs, 'OpenAI ' + (face ? 'images/edits' : 'images/generations')); }
 }
+/** what actually went out with the last call (after any options the model rejected were dropped) — shown under "Full prompt". The prompt itself is always run.fullPrompt || run.prompt. */
+function recordSent(run, fields, imgs, to) { const p = {}; for (const [k, v] of Object.entries(fields)) if (k !== 'prompt' && k !== 'n' && k !== 'input_references' && k !== 'model') p[k] = v; run.sentParams = p; run.sentImages = imgs.map(im => im.name); run.sentTo = to; }
 /** the reference images a run sends: a refine run sends the drawing it refines first, then the real face (if any); a normal run sends the face */
 async function inputImages(run) { const out = []; if (run.refineOf) { const f = path.join(RUNS, run.refineOf, 'out.png'); if (await ensureLocal(f)) out.push({ buf: fs.readFileSync(f), mime: 'image/png', name: 'drawing.png' }); } const face = run.face ? await faceBuffer(run.face) : null; if (face) out.push({ buf: face, mime: 'image/jpeg', name: 'face.jpg' }); return out; }
 const genImage = run => run.model.startsWith(DIRECT) ? oaiImage(run) : orImage(run);
@@ -170,7 +172,7 @@ async function orImage(run) { // one model on one face — returns { png, cost, 
     const item = d.data && d.data[0]; if (!item || !item.b64_json) throw new Error('no image in the response');
     let png = Buffer.from(item.b64_json, 'base64'); if (item.media_type && !/png/.test(item.media_type)) png = await sharp(png).png().toBuffer();
     return { png, cost: d.usage && d.usage.cost != null ? +d.usage.cost : null, ms: Date.now() - t0, sent: Object.keys(body).filter(k => k !== 'input_references' && k !== 'prompt') };
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); recordSent(run, body, imgs, 'OpenRouter images'); }
 }
 
 // ---------- likeness judge (OpenAI vision model looks at the photo and the drawing) ----------
@@ -383,7 +385,7 @@ app.post('/api/runs/:id/thumb', auth, async (req, res) => { // make this result 
 /** refine: a second pass that edits a finished drawing (plus the original face) with the refine prompt — same model unless { model } is given */
 app.post('/api/runs/:id/refine', auth, async (req, res) => { const src = runs.get(req.params.id); if (!src || src.status !== 'done') return res.status(404).json({ error: 'no finished image to refine' });
   const f = path.join(RUNS, src.id, 'out.png'); if (!(await ensureLocal(f))) return res.status(404).json({ error: 'image missing' }); const s = getSettings();
-  const r = Object.assign({}, src, { id: crypto.randomBytes(6).toString('hex'), model: typeof req.body.model === 'string' && req.body.model ? req.body.model : src.model, refineOf: src.id, refined: true, prompt: src.prompt, fullPrompt: refineText(s), judge: undefined, judgeError: undefined, star: false, cost: undefined, seconds: undefined, sent: undefined, dropped: undefined, retried: undefined, out: undefined, doneAt: undefined, createdAt: Date.now() });
+  const r = Object.assign({}, src, { id: crypto.randomBytes(6).toString('hex'), model: typeof req.body.model === 'string' && req.body.model ? req.body.model : src.model, refineOf: src.id, refined: true, prompt: src.prompt, fullPrompt: refineText(s), judge: undefined, judgeError: undefined, star: false, cost: undefined, seconds: undefined, sent: undefined, sentParams: undefined, sentImages: undefined, sentTo: undefined, dropped: undefined, retried: undefined, out: undefined, doneAt: undefined, createdAt: Date.now() });
   enqueue(r); res.json(pubRun(r)); });
 app.post('/api/runs/:id/judge', auth, async (req, res) => { const r = runs.get(req.params.id); if (!r || r.status !== 'done') return res.status(404).json({ error: 'no finished image to judge' }); try { res.json({ ok: true, judge: await judgeRun(r) }); } catch (e) { r.judgeError = String(e.message || e); saveRun(r); res.status(502).json({ error: e.message }); } });
 app.post('/api/runs/judge', auth, async (req, res) => { // judge every finished, unjudged run in a batch (or a list of ids)

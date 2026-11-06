@@ -14,7 +14,7 @@ async def until(pg, js, secs=40):
     return False
 async def main():
     async with async_playwright() as p:
-        br = await p.chromium.launch(); pg = await (await br.new_context(viewport={'width': 1400, 'height': 1100})).new_page(); errs = []
+        br = await p.chromium.launch(); ctx = await br.new_context(viewport={'width': 1400, 'height': 1100}); await ctx.grant_permissions(['clipboard-read', 'clipboard-write'], origin=B); pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e))); ANS = ['Space Pirates']; pg.on('dialog', lambda d: asyncio.ensure_future(d.accept(ANS[0]) if d.type == 'prompt' else d.accept()))
         await pg.goto(B + '/'); await pg.fill('#pw', 'pw'); await pg.click('#loginBtn'); await pg.wait_for_timeout(1500)
         print('tabs:', [await b.text_content() for b in await pg.query_selector_all('#nav button[data-t]')])
@@ -44,6 +44,19 @@ async def main():
         await until(pg, "() => document.querySelectorAll('#bdGrid .lab img').length >= 8 && !document.querySelector('#bdGrid .lab .wait')", 60)
         runs = [r for r in api('/api/runs')['runs'] if r['kind'] == 'build']
         print('images:', len(runs), '(4 faces x 2 models expected) | full prompt starts with foundation:', all(r['fullPrompt'].startswith('SIMPLE FACE RULES') for r in runs), '| adult -> moderation low:', all(r.get('moderation') == 'low' for r in runs))
+        # Full prompt box: exact text (foundation + combination prompt), settings and pictures sent, copy, close
+        sfr = [r for r in runs if r['variant'] == '1-female' and r['model'] == 'openai-direct/gpt-image-2'][0]
+        await pg.click(f'#bdGrid .lab[data-id="{sfr["id"]}"] [data-full]'); await pg.wait_for_timeout(300)
+        print('full prompt box open:', await pg.is_visible('#fullP'), '| title:', await pg.text_content('#fpTitle'))
+        secs = await pg.eval_on_selector_all('#fpText .sec', 'els => els.map(e => e.textContent)'); pre = await pg.eval_on_selector_all('#fpText pre', 'els => els.map(e => e.textContent)')
+        print('sections:', secs, '| foundation part right:', pre[0] == 'SIMPLE FACE RULES: realistic line art, single line thickness.', '| parts rejoin to the exact text sent:', pre[0] + '\n\n' + pre[1] == sfr['fullPrompt'])
+        await pg.wait_for_timeout(500); print('face thumbnail loaded:', await pg.evaluate("(() => { const i = document.querySelector('#fpMeta img'); return !!i && i.naturalWidth > 0; })()"))
+        meta = await pg.inner_text('#fpMeta'); print('meta:', ' | '.join(l for l in meta.split('\n') if l.strip()))
+        rj = api('/api/runs'); rr = [x for x in rj['runs'] if x['id'] == sfr['id']][0]; print('recorded on the run:', rr.get('sentTo'), rr.get('sentParams'), rr.get('sentImages'))
+        await pg.click('#fpCopy'); await pg.wait_for_timeout(200); print('copy button says:', await pg.text_content('#fpCopy'), '| clipboard matches:', (await pg.evaluate('navigator.clipboard.readText()')) == sfr['fullPrompt'])
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150); print('Escape closes it:', not await pg.is_visible('#fullP'))
+        fl = [r for r in runs if r['model'] == 'black-forest-labs/flux.2-pro'][0]; await pg.click(f'#bdGrid .lab[data-id="{fl["id"]}"] [data-full]'); await pg.wait_for_timeout(200)
+        print('OpenRouter one:', ' | '.join(l for l in (await pg.inner_text('#fpMeta')).split('\n') if l.strip())[:220]); await pg.mouse.click(5, 5); await pg.wait_for_timeout(150); print('click outside closes it:', not await pg.is_visible('#fullP'))
         # keep single female (OpenAI) and single male (flux)
         sf = [r for r in runs if r['variant'] == '1-female' and r['model'] == 'openai-direct/gpt-image-2'][0]; sm = [r for r in runs if r['variant'] == '1-male' and r['model'] == 'black-forest-labs/flux.2-pro'][0]
         for r in (sf, sm): await pg.click(f'#bdGrid [data-keep="{r["id"]}"]'); await pg.wait_for_timeout(1300)
@@ -97,5 +110,6 @@ async def main():
         print('prompt test title:', (await pg.text_content('#tab-matrix h2'))[:12], '| face picker has faces:', len(await pg.query_selector_all('#mxFaces .face')))
         await pg.click('#mxFaces .face img'); await pg.fill('#mxPrompts .mxText', 'pirate test'); await pg.evaluate("() => document.querySelectorAll('#mxModels input').forEach(i => i.checked = i.value === 'openai-direct/gpt-image-2')")
         await pg.click('#mxRun'); await pg.wait_for_timeout(2500); print('prompt test results:', len(await pg.query_selector_all('#mxGrid .lab')))
+        await pg.click('#mxGrid .lab [data-full]'); await pg.wait_for_timeout(200); print('prompt test full prompt:', await pg.eval_on_selector_all('#fpText .sec', 'els => els.map(e => e.textContent)'), (await pg.inner_text('#fpText pre'))[:40]); await pg.screenshot(path=SHOT.replace('.png', '-full.png')); await pg.click('#fpClose')
         print('ERRORS:', errs or 'none'); await br.close()
 asyncio.run(main())
