@@ -1,5 +1,5 @@
 """Theme builder end to end against the fake OpenRouter/OpenAI (test/fakeor.js):
-new theme -> description -> write all 8 -> images -> keep two -> retry the rest with a note -> edit & test -> un-keep -> export zip.
+new theme -> description -> write all 9 -> images -> keep two -> retry the rest with a note -> edit & test -> un-keep -> export zip.
 Also checks the consolidated tabs (Prompt test still runs) and that the export is booth-safe."""
 import asyncio, json, os, io, sys, zipfile, urllib.request
 from playwright.async_api import async_playwright

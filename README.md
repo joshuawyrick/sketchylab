@@ -12,9 +12,11 @@ keep a library of reference faces, and run every combination's prompt across man
   draft by hand, un-keep, test the kept prompts again, import/replace from a zip, and export the finished theme for the booth.
 - **Prompt test** — 1–4 prompts × 1–4 foundations × models × quality levels, all at once, each result labeled; one prompt
   and one foundation works as a quick scratchpad. Scores, hover zoom and a side-by-side compare strip.
-- **Foundations** — the "how" texts put in front of every prompt, and the refine prompt.
+- **Foundations** — the "how" texts put in front of the prompts, and the refine prompt. A foundation has an "All combinations" text and an optional master prompt per combination, which replaces that text for its combination in every test and in the baked export. Also editable in the Theme builder ("Used for").
 - **Settings** — keys, the live model list (filter, favorites, hide), likeness judge and default prompt writer, run defaults, cost log CSV.
 - **Plotter Studio** (`/studio/`) — a preset test version of the booth's Plotter Studio for a DexArm (Chrome + USB). The speed and drawing settings are hidden: pick a numbered preset, draw, rate it, delete the losers. "Copy results for Claude" exports everything, and "Add new presets" takes a new batch. Deleted presets stay on record, and settings already tried can't be added again. The starting 10 are in `server/plotter-presets.json`. (Its page, `public/studio/index.html`, was made in the Replit project and is not in this repo yet.)
+
+Pet alone is Lab-only for now: the booth lists `pet-alone.md` as an unknown file and skips it.
 
 Exports (`bake=1`) put each combination's foundation in front of its prompt, so the booth draws exactly what was tested,
 and translate model names for the booth (which calls OpenAI directly): `openai-direct/x` and `openai/x` become `x`;
@@ -34,7 +36,7 @@ models the booth can't run are left out of `theme.txt` with a comment.
 ## Zip format
 
 One folder per theme; inside it one prompt file per combination (`single-male.md`, `single-female.md`, `two-males.md`,
-`two-females.md`, `male-left-female-right.md`, `female-left-male-right.md`, `male-pet.md`, `female-pet.md`), an optional
+`two-females.md`, `male-left-female-right.md`, `female-left-male-right.md`, `male-pet.md`, `female-pet.md`, `pet-alone.md`), an optional
 `thumbnail.png`, and an optional `theme.txt` with `key: value` lines (kept as-is and exported back out).
 
 ## Tests

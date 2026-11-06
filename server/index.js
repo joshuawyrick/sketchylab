@@ -51,9 +51,9 @@ const DIRECT = 'openai-direct/';                            // model-id prefix f
 const PARALLEL = Math.max(1, Math.min(8, +process.env.LAB_PARALLEL || 4));
 
 // ---------- themes (same files as the booth: theme.json, prompts/<variant>.txt, thumb.png) ----------
-const VARIANTS = ['1-male', '1-female', '2-male-male', '2-female-female', '2-male-female', '2-female-male', 'pet-male', 'pet-female'];
-const VARIANT_LABELS = { '1-male': 'Single male', '1-female': 'Single female', '2-male-male': 'Two males', '2-female-female': 'Two females', '2-male-female': 'Male (left) + female (right)', '2-female-male': 'Female (left) + male (right)', 'pet-male': 'Male + pet', 'pet-female': 'Female + pet' };
-const VARIANT_FILES = { '1-male': ['single-male', '1-male', 'male', 'man'], '1-female': ['single-female', '1-female', 'female', 'woman'], '2-male-male': ['two-males', '2-male-male', 'male-male', 'two-men'], '2-female-female': ['two-females', '2-female-female', 'female-female', 'two-women'], '2-male-female': ['male-left-female-right', '2-male-female', 'male-female'], '2-female-male': ['female-left-male-right', '2-female-male', 'female-male'], 'pet-male': ['male-pet', 'pet-male', 'man-pet'], 'pet-female': ['female-pet', 'pet-female', 'woman-pet'] };
+const VARIANTS = ['1-male', '1-female', '2-male-male', '2-female-female', '2-male-female', '2-female-male', 'pet-male', 'pet-female', 'pet-only'];
+const VARIANT_LABELS = { '1-male': 'Single male', '1-female': 'Single female', '2-male-male': 'Two males', '2-female-female': 'Two females', '2-male-female': 'Male (left) + female (right)', '2-female-male': 'Female (left) + male (right)', 'pet-male': 'Male + pet', 'pet-female': 'Female + pet', 'pet-only': 'Pet alone' };
+const VARIANT_FILES = { '1-male': ['single-male', '1-male', 'male', 'man'], '1-female': ['single-female', '1-female', 'female', 'woman'], '2-male-male': ['two-males', '2-male-male', 'male-male', 'two-men'], '2-female-female': ['two-females', '2-female-female', 'female-female', 'two-women'], '2-male-female': ['male-left-female-right', '2-male-female', 'male-female'], '2-female-male': ['female-left-male-right', '2-female-male', 'female-male'], 'pet-male': ['male-pet', 'pet-male', 'man-pet'], 'pet-female': ['female-pet', 'pet-female', 'woman-pet'], 'pet-only': ['pet-alone', 'pet-only', 'pet'] };
 const slugify = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'theme';
 function readTheme(slug) {
   const dir = path.join(THEMES, slug); if (!fs.existsSync(path.join(dir, 'theme.json'))) return null;
@@ -89,9 +89,14 @@ const refineText = s => (s.refinePrompt || '').trim() || DEFAULT_REFINE;
 const getSettings = () => { try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) { return Object.assign({}, DEFAULT_SETTINGS); } };
 const saveSettings = s => { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); persist(SETTINGS_FILE); };
 
+/** a foundation has one general text, plus optional master prompts per combination (combos[variant]) that replace the general text for that combination */
+const ownMaster = (f, variant) => (f && variant && f.combos && String(f.combos[variant] || '').trim()) || '';
+const masterText = (f, variant) => ownMaster(f, variant) || (f ? String(f.text || '').trim() : '');
+const hasMaster = f => !!f && (!!String(f.text || '').trim() || Object.values(f.combos || {}).some(x => String(x || '').trim()));
+const fdLabel = (f, variant) => !f ? null : ownMaster(f, variant) ? `${f.name} · ${VARIANT_LABELS[variant]} master` : f.name;
 /** the foundation text that goes in front of a prompt: pick = 'none' | foundation id | '' (use the theme's choice) */
-function foundationFor(theme, pick) { const s = getSettings(); const want = pick === 'none' ? null : pick || (theme && (theme.settings.foundation || (theme.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); if (!want) return null; const f = (s.foundations || []).find(x => x.id === want); return f && f.text.trim() ? f : null; }
-const withFoundation = (f, prompt) => f ? f.text.trim() + '\n\n' + prompt : prompt;
+function foundationFor(theme, pick) { const s = getSettings(); const want = pick === 'none' ? null : pick || (theme && (theme.settings.foundation || (theme.settings.proportions === 'bighead' ? 'bighead' : 'normal'))); if (!want) return null; const f = (s.foundations || []).find(x => x.id === want); return hasMaster(f) ? f : null; }
+const withFoundation = (f, prompt, variant) => { const m = masterText(f, variant); return m ? m + '\n\n' + prompt : prompt; };
 // ---------- OpenRouter ----------
 let modelCache = { at: 0, list: [] };
 async function orModels(force) { // image-capable models; cached for 10 minutes. supported_parameters is an object keyed by parameter name
@@ -217,7 +222,7 @@ function pump() {
 const builderFile = slug => path.join(THEMES, slug, 'builder.json');
 function readBuilder(slug) { let b = {}; try { b = JSON.parse(fs.readFileSync(builderFile(slug), 'utf8')); } catch (_) {} return Object.assign({ description: '', rating: 'family', writerModel: '', drafts: [], kept: {} }, b); }
 function saveBuilder(slug, b) { fs.mkdirSync(path.join(THEMES, slug), { recursive: true }); fs.writeFileSync(builderFile(slug), JSON.stringify(b, null, 2)); persist(builderFile(slug)); }
-const foundationById = id => { const f = (getSettings().foundations || []).find(x => x.id === id); return f && f.text.trim() ? f : null; };
+const foundationById = id => { const f = (getSettings().foundations || []).find(x => x.id === id); return hasMaster(f) ? f : null; };
 const COMBO_SPEC = {
   '1-male': 'Exactly one person: the man in the photo.',
   '1-female': 'Exactly one person: the woman in the photo.',
@@ -226,7 +231,8 @@ const COMBO_SPEC = {
   '2-male-female': 'Exactly two people standing side by side: the man on the LEFT and the woman on the RIGHT, exactly as they stand in the photo.',
   '2-female-male': 'Exactly two people standing side by side: the woman on the LEFT and the man on the RIGHT, exactly as they stand in the photo.',
   'pet-male': 'The man in the photo with his pet from the photo. Keep the animal\'s real species, breed look, ears and markings; give it one small matching theme touch (a tiny hat, scarf or collar).',
-  'pet-female': 'The woman in the photo with her pet from the photo. Keep the animal\'s real species, breed look, ears and markings; give it one small matching theme touch (a tiny hat, scarf or collar).' };
+  'pet-female': 'The woman in the photo with her pet from the photo. Keep the animal\'s real species, breed look, ears and markings; give it one small matching theme touch (a tiny hat, scarf or collar).',
+  'pet-only': 'The pet from the photo on its own, with no people anywhere in the picture. Keep the animal\'s real species, breed look, ears and markings, and dress it in a funny, wholesome version of the theme: a hat, scarf, vest or small prop.' };
 const WRITER_SYSTEM = `You write the THEME SECTION of an image-generation prompt for Sketchy Robotics, a caricature booth at parties. A guest's photo goes to an image model together with a prompt; the model draws the guest as black line art; a robot arm with one pen then draws that picture on paper in under three minutes.
 
 A fixed FOUNDATION text (given to you) is placed in front of your text. It already covers line style, face accuracy and drawing rules. Do not restate it, do not contradict it, and never mention pens, plotters, robots, SVG or G-code. Your text is the WHAT: who is in the picture and where they stand, full-body pose, expression, outfit, props and a minimal setting.
@@ -239,13 +245,15 @@ Rules:
 - Bodies look fit, toned and flattering.
 - AUDIENCE family: tasteful and all-ages.
 - AUDIENCE adult: an 18+ party crowd that wants cheeky, sexy caricatures of themselves, so push the styling as far as a mainstream image model will draw. Use the most revealing version of the theme's outfits: plunging necklines, corsets and bustiers, crop tops, cut-outs, open shirts or vests showing a toned chest and abs, short shorts and mini skirts, high slits, thigh-high boots, lingerie-inspired or swimwear-inspired takes on the costume. Give them flirty, confident poses and attitude (hand on hip, over-the-shoulder glance, wink, smirk, a cocked hip, a playful lean) and cheeky props or innuendo that fit the theme. Bodies are fit and toned, curvy or muscular, and flattering. Keep it suggestive, never explicit: no nudity, no exposed nipples or genitals, no sexual acts. Never describe anyone as young, teen or childlike.
+- COMBINATION Pet alone: there are no people, the animal is the whole subject. Ignore the fit-and-toned rule and any adult or sexy styling in the theme description or the notes: a pet is only ever funny and wholesome, never sexy or suggestive.
 - HEAD big: a caricature with an oversized head (about one third of the figure's height) on a smaller stylised body. HEAD normal: realistic proportions.
 - When other combinations of this theme are already approved, reuse their outfit and prop descriptions so the whole theme reads as one set.
 - 150 to 300 words, plain sentences in one or two paragraphs. No headings, bullet points, markdown, title or quotation marks. Output only the theme section.`;
 function writerUser({ theme, b, variant, fd, others, note, previous, take, takes }) {
   const head = fd && /big/i.test(fd.name + ' ' + fd.id) ? 'big' : (theme.settings.proportions === 'bighead' ? 'big' : 'normal');
-  const parts = [`FOUNDATION (goes in front of your text, word for word):\n<<<\n${fd ? fd.text.trim() : '(none)'}\n>>>`, `THEME NAME: ${theme.name}`, `AUDIENCE: ${b.rating === 'adult' ? 'adult' : 'family'}`, `HEAD: ${head}`,
+  const parts = [`FOUNDATION (goes in front of your text, word for word):\n<<<\n${masterText(fd, variant) || '(none)'}\n>>>`, `THEME NAME: ${theme.name}`, `AUDIENCE: ${b.rating === 'adult' && variant !== 'pet-only' ? 'adult' : 'family'}`, `HEAD: ${head}`,
     `THEME DESCRIPTION FROM THE OWNER:\n<<<\n${(b.description || '').trim() || '(only the theme name — invent a fun, recognisable take on it)'}\n>>>`, `COMBINATION: ${VARIANT_LABELS[variant]}. ${COMBO_SPEC[variant]}`];
+  if (variant === 'pet-only' && b.rating === 'adult') { others = []; previous = null; } // an adult theme's outfits and wording never carry over to an animal
   if (others.length) parts.push('ALREADY APPROVED COMBINATIONS (match their outfits and props):\n' + others.map(o => `- ${VARIANT_LABELS[o.v]}: ${o.text}`).join('\n'));
   if (previous) parts.push(`PREVIOUS ATTEMPT FOR THIS COMBINATION (the owner wants a different take, keep what fits the theme):\n<<<\n${previous}\n>>>`);
   if (note) parts.push(`OWNER'S NOTE FOR THIS ATTEMPT: ${note}`);
@@ -271,7 +279,7 @@ async function writeText(model, system, user) { // OpenAI direct when the id has
 const writerModelOf = b => (b.writerModel || getSettings().writerModel || (OAI_KEY ? 'gpt-5.5' : 'openai/gpt-5.5')).trim();
 let writing = 0; // drafts being written right now (the page polls while > 0)
 function buildRuns(t, b, d, models, face, opts, batch) { const fd = foundationById(d.foundationId); const out = [];
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'build', batch, theme: t.slug, themeName: t.name, variant: d.variant, draft: d.id, face: face || null, model, prompt: d.prompt, fullPrompt: withFoundation(fd, d.prompt), foundation: fd ? fd.name : null, foundationId: d.foundationId || null, moderation: t.settings.moderation || (b.rating === 'adult' ? 'low' : null), opts: opts || {}, createdAt: Date.now() }; enqueue(r); out.push(r); }
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'build', batch, theme: t.slug, themeName: t.name, variant: d.variant, draft: d.id, face: face || null, model, prompt: d.prompt, fullPrompt: withFoundation(fd, d.prompt, d.variant), foundation: fdLabel(fd, d.variant), foundationId: d.foundationId || null, moderation: d.variant === 'pet-only' ? null : t.settings.moderation || (b.rating === 'adult' ? 'low' : null), opts: opts || {}, createdAt: Date.now() }; enqueue(r); out.push(r); }
   return out; }
 /** booth model names: the booth calls OpenAI directly, so "openai-direct/x" and OpenRouter's "openai/x" become "x"; anything else it can't run */
 const boothModel = m => { const s = String(m || '').trim(); if (!s) return ''; if (s.startsWith(DIRECT)) return s.slice(DIRECT.length); if (s.startsWith('openai/')) return s.slice(7); return s.includes('/') ? null : s; };
@@ -285,7 +293,7 @@ const auth = (req, res, next) => { const t = req.get('x-admin-token') || req.que
 app.post('/api/login', (req, res) => { if ((req.body.password || '') === ADMIN_PASSWORD) res.json({ ok: true, token: ADMIN_PASSWORD }); else res.status(401).json({ error: 'wrong password' }); });
 
 app.get('/api/state', auth, (req, res) => res.json({ settings: Object.assign(getSettings(), { defaultRefine: DEFAULT_REFINE }), themes: listThemes(), variants: VARIANT_LABELS, variantOrder: VARIANTS, faces: listFaces(), hasKey: !!(OR_KEY || OAI_KEY), hasOpenAI: !!OAI_KEY, hasOpenRouter: !!OR_KEY, durable: !!bucket, readOnly: !!bucket && !IS_DEPLOYMENT, parallel: PARALLEL }));
-app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note', 'refinePrompt', 'judgeModel', 'writerModel', 'autoJudge', 'showOpenRouter', 'showOpenAI', 'favOnly']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || '') })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
+app.post('/api/settings', auth, (req, res) => { const s = getSettings(); for (const k of ['models', 'favorites', 'hidden', 'foundations', 'quality', 'resolution', 'aspect', 'background', 'moderation', 'note', 'refinePrompt', 'judgeModel', 'writerModel', 'autoJudge', 'showOpenRouter', 'showOpenAI', 'favOnly']) if (k in req.body) s[k] = req.body[k]; if (!Array.isArray(s.hidden)) s.hidden = []; if (Array.isArray(s.foundations)) s.foundations = s.foundations.map(f => ({ id: String(f.id || slugify(f.name || 'f')), name: String(f.name || '').slice(0, 40), text: String(f.text || ''), combos: Object.fromEntries(VARIANTS.filter(v => f.combos && String(f.combos[v] || '').trim()).map(v => [v, String(f.combos[v])])) })).filter(f => f.id && f.name); if (!Array.isArray(s.favorites)) s.favorites = []; if (!Array.isArray(s.models)) s.models = []; saveSettings(s); res.json(Object.assign({ ok: true }, s)); });
 app.post('/api/favorites/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); s.favorites = (s.favorites || []).includes(id) ? s.favorites.filter(m => m !== id) : s.favorites.concat(id); saveSettings(s); res.json({ ok: true, favorites: s.favorites }); });
 // hide a model everywhere in the lab (it's still on OpenRouter; un-hide it from Settings → "show hidden"). Hiding also drops it from favorites and the default ticks.
 app.post('/api/hidden/toggle', auth, (req, res) => { const s = getSettings(); const id = String(req.body.model || ''); if (!id) return res.status(400).end(); const h = Array.isArray(s.hidden) ? s.hidden : [];
@@ -353,7 +361,7 @@ app.get('/api/themes/export', auth, async (req, res) => {
   for (const t of which) { const dir = t.name.replace(/[\\/:*?"<>|]/g, '-');
     const fd = req.query.bake === '1' ? foundationFor(t, '') : null; // bake=1: foundation text goes in front of every prompt file, so the booth draws exactly what the lab tested
     const kept = readBuilder(t.slug).kept || {};
-    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) { const fv = req.query.bake === '1' && kept[v] && kept[v].foundationId ? foundationById(kept[v].foundationId) || fd : fd; zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fv, t.prompts[v].trim()), 'utf8')); }
+    for (const v of VARIANTS) if (t.prompts[v] && t.prompts[v].trim()) { const fv = req.query.bake === '1' && kept[v] && kept[v].foundationId ? foundationById(kept[v].foundationId) || fd : fd; zip.addFile(`${dir}/${VARIANT_FILES[v][0]}.md`, Buffer.from(withFoundation(fv, t.prompts[v].trim(), v), 'utf8')); }
     const lines = []; for (const [k, v] of Object.entries(t.settings || {})) { if (/(^|\.)model$/.test(k)) { const bm = boothModel(v); if (bm) lines.push(`${k}: ${bm}`); else if (bm === null) lines.push(`# ${k.replace(/\.model$/, '')} was tested on ${v}; the booth only runs OpenAI models, so it will use the theme/default model`); } else lines.push(`${k}: ${v}`); }
     if (lines.length) zip.addFile(`${dir}/theme.txt`, Buffer.from(lines.join('\n') + '\n', 'utf8'));
     const th = path.join(THEMES, t.slug, 'thumb.png'); if (await ensureLocal(th)) zip.addFile(`${dir}/thumbnail.png`, fs.readFileSync(th)); }
@@ -398,7 +406,7 @@ app.post('/api/test/theme', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const faces = req.body.faces || {}; const batch = 'b' + Date.now().toString(36); const out = []; const fd = foundationFor(t, req.body.foundation);
   for (const v of VARIANTS) { const prompt = (t.prompts[v] || '').trim(); const face = faces[v]; if (!prompt || !face) continue;
-    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, moderation: t.settings.moderation || null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
+    for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'theme', batch, theme: t.slug, themeName: t.name, variant: v, face, model, prompt, fullPrompt: withFoundation(fd, prompt, v), foundation: fdLabel(fd, v), moderation: t.settings.moderation || null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'nothing to run — give at least one combination a face (and make sure it has a prompt)' });
   res.json({ ok: true, batch, runs: out });
 });
@@ -408,7 +416,7 @@ app.post('/api/test/prompt', auth, (req, res) => {
   const models = (Array.isArray(req.body.models) ? req.body.models : []).filter(m => typeof m === 'string' && m).slice(0, 24); if (!models.length) return res.status(400).json({ error: 'tick at least one model' });
   const batch = 'b' + Date.now().toString(36); const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const out = [];
   const fd = foundationFor(t, req.body.foundation);
-  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt), foundation: fd ? fd.name : null, moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
+  for (const model of models) { const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'studio', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant: VARIANTS.includes(req.body.variant) ? req.body.variant : null, face: req.body.face || null, model, prompt, fullPrompt: withFoundation(fd, prompt, req.body.variant), foundation: fdLabel(fd, req.body.variant), moderation: t ? t.settings.moderation || null : null, opts: req.body.opts || {}, createdAt: Date.now() }; enqueue(r); out.push(pubRun(r)); }
   res.json({ ok: true, batch, runs: out });
 });
 /** matrix: { face, variant?, theme?, foundations: [id|'none'], prompts: [{label, text}], models, opts } → one run per foundation × prompt × model, all tagged with the matrix batch */
@@ -419,9 +427,9 @@ app.post('/api/test/matrix', auth, (req, res) => {
   const t = req.body.theme ? readTheme(slugify(req.body.theme)) : null; const variant = VARIANTS.includes(req.body.variant) ? req.body.variant : null;
   const quals = (Array.isArray(req.body.qualities) && req.body.qualities.length ? req.body.qualities : [(req.body.opts || {}).quality || '']).map(q => String(q || '')).slice(0, 6); const multiQ = quals.length > 1;
   const batch = 'm' + Date.now().toString(36); const out = [];
-  for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fd.name : null; if (fname === null) continue;
+  for (const fid of fids) { const fd = fid === 'none' ? null : (s.foundations || []).find(f => f.id === fid); const fname = fid === 'none' ? 'No foundation' : fd ? fdLabel(fd, variant) : null; if (fname === null) continue;
     for (const p of prompts) for (const q of quals) for (const model of models) {
-      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, quality: multiQ ? (q || 'default') : null, fullPrompt: withFoundation(fd && fd.text.trim() ? fd : null, p.text), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: Object.assign({}, req.body.opts || {}, { quality: q }), createdAt: Date.now() };
+      const r = { id: crypto.randomBytes(6).toString('hex'), kind: 'matrix', batch, theme: t ? t.slug : null, themeName: t ? t.name : null, variant, face: req.body.face || null, model, prompt: p.text, promptLabel: p.label, quality: multiQ ? (q || 'default') : null, fullPrompt: withFoundation(fd, p.text, variant), foundation: fname, foundationId: fid, moderation: t ? t.settings.moderation || null : null, opts: Object.assign({}, req.body.opts || {}, { quality: q }), createdAt: Date.now() };
       enqueue(r); out.push(pubRun(r)); } }
   if (!out.length) return res.status(400).json({ error: 'no runs — check the foundations exist' });
   res.json({ ok: true, batch, runs: out });
